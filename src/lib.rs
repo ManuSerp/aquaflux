@@ -1,13 +1,19 @@
-use pyo3::prelude::*;
+pub mod pipeline;
 
-/// A Python module implemented in Rust.
+use pyo3::prelude::*;
 #[pymodule]
 mod aquaflux {
+    use crate::pipeline::Instructions;
     use pyo3::prelude::*;
 
-    /// Formats the sum of two numbers as string.
+    #[pyclass]
+    pub struct CompiledPipeline {
+        pub instructions: Vec<Instructions>,
+    }
+
     #[pyfunction]
-    fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
-        Ok((a + b).to_string())
+    pub fn compile_pipeline(spec: &str) -> PyResult<CompiledPipeline> {
+        let ops = parse_pipeline(spec);
+        Ok(CompiledPipeline { instructions: ops })
     }
 }
