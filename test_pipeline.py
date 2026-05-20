@@ -7,7 +7,7 @@ import polars
 
 # Create individual operations
 select_op = aquaflux.SelectOp(["customer", "order_id", "amount"])
-fillna_op = aquaflux.FillNaOp("customer", aquaflux.ScalarValue.String("Unknown"))
+fillna_op = aquaflux.FillNaOp(["customer"], aquaflux.ScalarValue.String("Unknown"))
 cast_op = aquaflux.CastOp("amount", aquaflux.DataType.Float64)
 rename_op = aquaflux.RenameOp("customer", "customer_name")
 

@@ -32,7 +32,7 @@ impl From<PySelectOp> for pipeline::SelectOp {
 #[derive(Clone)]
 pub struct PyFillNaOp {
     #[pyo3(get, set)]
-    pub column: String,
+    pub columns: Vec<String>,
     #[pyo3(get, set)]
     pub value: PyScalarValue,
 }
@@ -40,15 +40,15 @@ pub struct PyFillNaOp {
 #[pymethods]
 impl PyFillNaOp {
     #[new]
-    pub fn new(column: String, value: PyScalarValue) -> Self {
-        PyFillNaOp { column, value }
+    pub fn new(columns: Vec<String>, value: PyScalarValue) -> Self {
+        PyFillNaOp { columns, value }
     }
 }
 
 impl From<PyFillNaOp> for pipeline::FillNaOp {
     fn from(py_op: PyFillNaOp) -> Self {
         pipeline::FillNaOp {
-            column: py_op.column,
+            columns: py_op.columns,
             value: py_op.value.into(),
         }
     }
