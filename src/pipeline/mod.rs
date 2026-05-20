@@ -1,5 +1,5 @@
 pub mod dataframe;
-
+use polars::prelude::*;
 pub trait Executable {
     fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String>;
 }
@@ -36,6 +36,17 @@ pub enum ScalarValue {
     Bool(bool),
 }
 
+impl ScalarValue {
+    fn scalar_to_expr(&self) -> Expr {
+        match self {
+            ScalarValue::Int64(v) => lit(*v),
+            ScalarValue::Float64(v) => lit(*v),
+            ScalarValue::String(v) => lit(v.as_str()),
+            ScalarValue::Bool(v) => lit(*v),
+        }
+    }
+}
+
 pub struct SelectOp {
     pub columns: Vec<String>,
 }
@@ -48,14 +59,26 @@ impl Executable for SelectOp {
 }
 
 pub struct FillNaOp {
-    pub column: String,
+    pub columns: Vec<String>,
     pub value: ScalarValue,
 }
 
 impl Executable for FillNaOp {
     fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
-        // dummy implementation, replace with actual logic to fill NaN values
-        Ok(df)
+        let fill_expr = self.value.scalar_to_expr();
+
+        // Create expressions for all columns
+        let exprs: Vec<Expr> = self
+            .columns
+            .iter()
+            .map(|col_name| col(col_name).fill_null(fill_expr.clone()))
+            .collect();
+
+        // Apply all at once
+        df.lazy()
+            .with_columns(exprs)
+            .collect()
+            .map_err(|e| format!("Fill null failed: {}", e))
     }
 }
 
