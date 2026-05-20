@@ -16,6 +16,12 @@ pub fn from_python(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
 
     // If not, try to convert from pandas
     // Import polars module
+    // Warn the user that converting from pandas is less efficient
+    py.import("warnings")?
+        .call_method1("warn", (
+            "Converting from pandas DataFrame. For better performance, pass a Polars DataFrame directly.",
+        ))?;
+
     let polars = py.import("polars")?;
 
     // Call polars.from_pandas(obj)
