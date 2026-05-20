@@ -9,4 +9,6 @@ name = "aquaflux"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.28.3"
+pyo3 = "0.27"
+polars = { version = "*", features = ["lazy", "dtype-full"]}
+pyo3-polars = { version = "0.26" }
