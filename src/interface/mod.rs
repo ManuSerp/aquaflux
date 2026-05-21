@@ -40,8 +40,11 @@ pub struct PyFillNaOp {
 #[pymethods]
 impl PyFillNaOp {
     #[new]
-    pub fn new(columns: Vec<String>, value: PyScalarValue) -> Self {
-        PyFillNaOp { columns, value }
+    pub fn new(columns: Vec<String>, value: PyScalarValueInput) -> Self {
+        PyFillNaOp {
+            columns,
+            value: value.into(),
+        }
     }
 }
 
@@ -130,6 +133,7 @@ impl From<PyDataType> for pipeline::DataType {
 
 #[pyclass(name = "ScalarValue", from_py_object)]
 #[derive(Clone)]
+// what really the use of this when we also have the input
 pub enum PyScalarValue {
     Int64(i64),
     Float64(f64),
@@ -145,5 +149,55 @@ impl From<PyScalarValue> for pipeline::ScalarValue {
             PyScalarValue::String(v) => pipeline::ScalarValue::String(v),
             PyScalarValue::Bool(v) => pipeline::ScalarValue::Bool(v),
         }
+    }
+}
+
+impl From<PyScalarValueInput> for PyScalarValue {
+    fn from(input: PyScalarValueInput) -> Self {
+        match input {
+            PyScalarValueInput::Int(v) => PyScalarValue::Int64(v),
+            PyScalarValueInput::Float(v) => PyScalarValue::Float64(v),
+            PyScalarValueInput::String(v) => PyScalarValue::String(v),
+            PyScalarValueInput::Bool(v) => PyScalarValue::Bool(v),
+            PyScalarValueInput::Wrapped(v) => v,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum PyScalarValueInput {
+    Int(i64),
+    Float(f64),
+    String(String),
+    Bool(bool),
+    Wrapped(PyScalarValue),
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for PyScalarValueInput {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        // Try to extract as wrapped type first
+        if let Ok(wrapped) = ob.extract::<PyScalarValue>() {
+            return Ok(PyScalarValueInput::Wrapped(wrapped));
+        }
+
+        // Try primitive types
+        if let Ok(s) = ob.extract::<String>() {
+            return Ok(PyScalarValueInput::String(s));
+        }
+        if let Ok(b) = ob.extract::<bool>() {
+            return Ok(PyScalarValueInput::Bool(b));
+        }
+        if let Ok(i) = ob.extract::<i64>() {
+            return Ok(PyScalarValueInput::Int(i));
+        }
+        if let Ok(f) = ob.extract::<f64>() {
+            return Ok(PyScalarValueInput::Float(f));
+        }
+
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "Expected int, float, str, bool, or ScalarValue",
+        ))
     }
 }
