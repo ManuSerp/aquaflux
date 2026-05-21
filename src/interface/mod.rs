@@ -61,7 +61,7 @@ impl From<PyFillNaOp> for pipeline::FillNaOp {
 #[derive(Clone)]
 pub struct PyCastOp {
     #[pyo3(get, set)]
-    pub column: String,
+    pub columns: Vec<String>,
     #[pyo3(get, set)]
     pub dtype: PyDataType,
 }
@@ -69,15 +69,18 @@ pub struct PyCastOp {
 #[pymethods]
 impl PyCastOp {
     #[new]
-    pub fn new(column: String, dtype: PyDataType) -> Self {
-        PyCastOp { column, dtype }
+    pub fn new(columns: Vec<String>, dtype: PyDataTypeInput) -> Self {
+        PyCastOp {
+            columns,
+            dtype: dtype.into(),
+        }
     }
 }
 
 impl From<PyCastOp> for pipeline::CastOp {
     fn from(py_op: PyCastOp) -> Self {
         pipeline::CastOp {
-            column: py_op.column,
+            columns: py_op.columns,
             dtype: py_op.dtype.into(),
         }
     }
@@ -127,6 +130,52 @@ impl From<PyDataType> for pipeline::DataType {
             PyDataType::Float64 => pipeline::DataType::Float64,
             PyDataType::String => pipeline::DataType::String,
             PyDataType::Bool => pipeline::DataType::Bool,
+        }
+    }
+}
+
+impl From<PyDataTypeInput> for PyDataType {
+    fn from(input: PyDataTypeInput) -> Self {
+        match input {
+            PyDataTypeInput::Int => PyDataType::Int64,
+            PyDataTypeInput::Float => PyDataType::Float64,
+            PyDataTypeInput::String => PyDataType::String,
+            PyDataTypeInput::Bool => PyDataType::Bool,
+            PyDataTypeInput::Wrapped(v) => v,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum PyDataTypeInput {
+    Int,
+    Float,
+    String,
+    Bool,
+    Wrapped(PyDataType),
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for PyDataTypeInput {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        // Try to extract as wrapped DataType enum first
+        if let Ok(wrapped) = ob.extract::<PyDataType>() {
+            return Ok(PyDataTypeInput::Wrapped(wrapped));
+        }
+
+        // Try to match Python type objects
+        let type_name = ob.get_type().name()?;
+        let type_name_str = type_name.to_str()?;
+        match type_name_str {
+            "int" => Ok(PyDataTypeInput::Int),
+            "float" => Ok(PyDataTypeInput::Float),
+            "str" => Ok(PyDataTypeInput::String),
+            "bool" => Ok(PyDataTypeInput::Bool),
+            _ => Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+                "Expected int, float, str, bool type, or DataType enum, got: {}",
+                type_name_str
+            ))),
         }
     }
 }

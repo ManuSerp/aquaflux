@@ -9,7 +9,8 @@ import polars
 select_op = aquaflux.SelectOp(["customer", "order_id", "amount"])
 # fillna_op = aquaflux.FillNaOp(["customer"], aquaflux.ScalarValue.String("Unknown"))
 fillna_op = aquaflux.FillNaOp(["customer"], "Unknown")
-cast_op = aquaflux.CastOp("amount", aquaflux.DataType.Float64)
+# Using Python type directly instead of aquaflux.DataType.Float64
+cast_op = aquaflux.CastOp(["amount"], float)
 rename_op = aquaflux.RenameOp("customer", "customer_name")
 
 # Compile the pipeline

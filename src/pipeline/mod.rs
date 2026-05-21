@@ -21,12 +21,25 @@ impl Executable for Op {
         }
     }
 }
-
+// todo
+// waht the point of that, maybe we should remove it and simpl use polars::prelude::DataType directly
+#[derive(Clone)]
 pub enum DataType {
     Int64,
     Float64,
     String,
     Bool,
+}
+
+impl From<DataType> for polars::prelude::DataTypeExpr {
+    fn from(dt: DataType) -> Self {
+        match dt {
+            DataType::Int64 => polars::prelude::DataType::Int64.into(),
+            DataType::Float64 => polars::prelude::DataType::Float64.into(),
+            DataType::String => polars::prelude::DataType::String.into(),
+            DataType::Bool => polars::prelude::DataType::Boolean.into(),
+        }
+    }
 }
 
 pub enum ScalarValue {
@@ -83,14 +96,22 @@ impl Executable for FillNaOp {
 }
 
 pub struct CastOp {
-    pub column: String,
+    pub columns: Vec<String>,
     pub dtype: DataType,
 }
 
 impl Executable for CastOp {
     fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
-        // dummy implementation, replace with actual logic to cast column types
-        Ok(df)
+        let exprs: Vec<Expr> = self
+            .columns
+            .iter()
+            .map(|col_name| col(col_name).cast(self.dtype.clone()))
+            .collect();
+
+        df.lazy()
+            .with_columns(exprs)
+            .collect()
+            .map_err(|e| format!("Cast operation failed: {}", e))
     }
 }
 
