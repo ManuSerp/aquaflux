@@ -4,7 +4,7 @@
 
 Aquaflux compiles scikit-learn-style pipeline transformers into optimized Rust code for blazing-fast data transformations.
 
-## 📦 Project Structure
+##  Project Structure
 
 This monorepo contains two complementary packages:
 
@@ -33,7 +33,7 @@ Python helper utilities for pipeline building:
 pip install aquaflux_fabri
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ```python
 import aquaflux_core as aquaflux
@@ -51,24 +51,16 @@ data = pd.DataFrame({"customer": ["Alice", None], "amount": ["100", "200"]})
 result = pipeline.execute(data)
 ```
 
-## 🎯 Why Aquaflux?
+##  Why Aquaflux?
 
-- **🚄 Fast**: Rust-compiled transformations with zero Python overhead
-- **🔄 Compatible**: Works with both Pandas and Polars DataFrames
-- **📐 Declarative**: Define transformations as composable operations
-- **🛡️ Type-safe**: Rust's type system catches errors at compile time
-- **🧩 Extensible**: Easy to add custom operations
+- ** Fast**: Rust-compiled transformations with zero Python overhead
+- ** Compatible**: Works with both Pandas and Polars DataFrames
+- ** Declarative**: Define transformations as composable operations
+- ** Type-safe**: Rust's type system catches errors at compile time
+- ** Extensible**: Easy to add custom operations
 
-## 📚 Documentation
+##  Documentation
 
 See individual package READMEs:
 - [aquaflux_core](./aquaflux_core/README.md) - Core operations and architecture
 - [aquaflux_fabri](./aquaflux_fabri/README.md) - Helper utilities
-
-## 🤝 Contributing
-
-Contributions welcome! See the respective package READMEs for development setup.
-
-## 📝 License
-
-See [LICENSE](./LICENSE) for details.
