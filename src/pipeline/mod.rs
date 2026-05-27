@@ -116,13 +116,23 @@ impl Executable for CastOp {
 }
 
 pub struct RenameOp {
-    pub column: String,
-    pub new_name: String,
+    pub columns: Vec<String>,
+    pub new_names: Vec<String>,
 }
 
 impl Executable for RenameOp {
     fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
-        // dummy implementation, replace with actual logic to rename columns
-        Ok(df)
+        let exprs: Vec<Expr> = self
+            .columns
+            .iter()
+            .zip(self.new_names.iter())
+            .map(|(old, new)| col(old).alias(new))
+            .collect();
+        let temp = df
+            .lazy()
+            .with_columns(exprs)
+            .collect()
+            .map_err(|e| format!("Rename operation failed: {}", e))?;
+        Ok(temp.drop_many(self.columns.iter()))
     }
 }

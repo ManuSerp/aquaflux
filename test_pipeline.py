@@ -11,7 +11,7 @@ select_op = aquaflux.SelectOp(["customer", "order_id", "amount"])
 fillna_op = aquaflux.FillNaOp(["customer"], "Unknown")
 # Using Python type directly instead of aquaflux.DataType.Float64
 cast_op = aquaflux.CastOp(["amount"], float)
-rename_op = aquaflux.RenameOp("customer", "customer_name")
+rename_op = aquaflux.RenameOp(["customer"], ["customer_name"])
 
 # Compile the pipeline
 pipeline = aquaflux.compile_pipeline(

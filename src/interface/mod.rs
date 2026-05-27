@@ -19,7 +19,6 @@ impl PySelectOp {
     }
 }
 
-// Convert Python type to internal type
 impl From<PySelectOp> for pipeline::SelectOp {
     fn from(py_op: PySelectOp) -> Self {
         pipeline::SelectOp {
@@ -90,24 +89,24 @@ impl From<PyCastOp> for pipeline::CastOp {
 #[derive(Clone)]
 pub struct PyRenameOp {
     #[pyo3(get, set)]
-    pub column: String,
+    pub columns: Vec<String>,
     #[pyo3(get, set)]
-    pub new_name: String,
+    pub new_names: Vec<String>,
 }
 
 #[pymethods]
 impl PyRenameOp {
     #[new]
-    pub fn new(column: String, new_name: String) -> Self {
-        PyRenameOp { column, new_name }
+    pub fn new(columns: Vec<String>, new_names: Vec<String>) -> Self {
+        PyRenameOp { columns, new_names }
     }
 }
 
 impl From<PyRenameOp> for pipeline::RenameOp {
     fn from(py_op: PyRenameOp) -> Self {
         pipeline::RenameOp {
-            column: py_op.column,
-            new_name: py_op.new_name,
+            columns: py_op.columns,
+            new_names: py_op.new_names,
         }
     }
 }
@@ -167,16 +166,26 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyDataTypeInput {
         // Try to match Python type objects
         let type_name = ob.get_type().name()?;
         let type_name_str = type_name.to_str()?;
-        match type_name_str {
-            "int" => Ok(PyDataTypeInput::Int),
-            "float" => Ok(PyDataTypeInput::Float),
-            "str" => Ok(PyDataTypeInput::String),
-            "bool" => Ok(PyDataTypeInput::Bool),
-            _ => Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
-                "Expected int, float, str, bool type, or DataType enum, got: {}",
+        if type_name_str != "type" {
+            return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+                "Expected a type object (int, float, str, bool) or DataType enum, got: {}",
                 type_name_str
-            ))),
+            )));
         }
+        if let Ok(py_type) = ob.cast::<pyo3::types::PyType>() {
+            let type_name = py_type.name()?;
+            match type_name.to_str()? {
+                "int" => return Ok(PyDataTypeInput::Int),
+                "float" => return Ok(PyDataTypeInput::Float),
+                "str" => return Ok(PyDataTypeInput::String),
+                "bool" => return Ok(PyDataTypeInput::Bool),
+                _ => {}
+            }
+        }
+
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "Expected int, float, str, bool type, or DataType enum",
+        ))
     }
 }
 
