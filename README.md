@@ -8,7 +8,7 @@ Aquaflux compiles scikit-learn-style pipeline transformers into optimized Rust c
 
 This monorepo contains two complementary packages:
 
-### [`aquaflux_core`](./aquaflux_core/)
+### [`aquaflux-core`](./aquaflux_core/)
 
 The core Rust library providing high-performance data transformation operations:
 - Rust-compiled operations (Select, FillNa, Cast, Rename, etc.)
@@ -21,12 +21,12 @@ The core Rust library providing high-performance data transformation operations:
 pip install aquaflux_core
 ```
 
-### [`aquaflux_fabri`](./aquaflux_fabri/)
+### [`aquaflux-fabri`](./aquaflux_fabri/)
 
 Python helper utilities for pipeline building:
 - Convenience functions for common pipeline patterns
 - Scikit-learn pipeline converters
-- Higher-level abstractions over `aquaflux_core`
+- Higher-level abstractions over `aquaflux-core`
 
 **Installation:**
 ```bash
@@ -62,5 +62,5 @@ result = pipeline.execute(data)
 ##  Documentation
 
 See individual package READMEs:
-- [aquaflux_core](./aquaflux_core/README.md) - Core operations and architecture
-- [aquaflux_fabri](./aquaflux_fabri/README.md) - Helper utilities
+- [aquaflux-core](./aquaflux_core/README.md) - Core operations and architecture
+- [aquaflux-fabri](./aquaflux_fabri/README.md) - Helper utilities

@@ -2,17 +2,17 @@
 
 **Python helpers for fluid pipeline construction**
 
-`aquaflux_fabri` provides convenience functions and high-level utilities to simplify building data transformation pipelines with [`aquaflux_core`](../aquaflux_core/).
+`aquaflux-fabri` provides convenience functions and high-level utilities to simplify building data transformation pipelines with [`aquaflux-core`](../aquaflux_core/).
 
 ## Installation
 
 ```bash
-pip install aquaflux_fabri aquaflux_core
+pip install aquaflux-fabri aquaflux-core
 ```
 
 ## What is Fabri?
 
-"Fabri" provides the tools and patterns to craft data pipelines more ergonomically. While `aquaflux_core` gives you raw building blocks (operations), `aquaflux_fabri` gives you:
+"Fabri" provides the tools and patterns to craft data pipelines more ergonomically. While `aquaflux-core` gives you raw building blocks (operations), `aquaflux-fabri` gives you:
 
 - **Pre-built pipeline patterns** for common use cases
 - **Scikit-learn converters** to transform existing sklearn pipelines
@@ -73,8 +73,8 @@ See [`exemple.py`](./exemple.py) for example scikit-learn pipeline conversions.
 
 ## Architecture
 
-`aquaflux_fabri` is pure Python code that:
-1. Wraps `aquaflux_core` operations
+`aquaflux-fabri` is pure Python code that:
+1. Wraps `aquaflux-core` operations
 2. Provides domain-specific abstractions
 3. Handles common patterns and edge cases
 4. No performance overhead - just convenience
@@ -88,7 +88,7 @@ See [`exemple.py`](./exemple.py) for example scikit-learn pipeline conversions.
               │
               ▼
 ┌─────────────────────────────────────┐
-│      aquaflux_fabri (Python)        │  ← Convenience & Patterns
+│      aquaflux-fabri (Python)        │  ← Convenience & Patterns
 │  • Helper functions                 │
 │  • Pipeline builders                │
 │  • sklearn converters               │
@@ -96,7 +96,7 @@ See [`exemple.py`](./exemple.py) for example scikit-learn pipeline conversions.
               │
               ▼
 ┌─────────────────────────────────────┐
-│      aquaflux_core (Rust)           │  ← Performance & Execution
+│      aquaflux-core (Rust)           │  ← Performance & Execution
 │  • Core operations                  │
 │  • Pipeline compiler                │
 │  • Polars execution engine          │
@@ -109,7 +109,7 @@ This is a pure Python package - no build step required:
 
 ```bash
 # Install in editable mode
-pip install -e aquaflux_fabri/
+pip install -e aquaflux-fabri/
 
 # Or just use directly
 export PYTHONPATH="$PYTHONPATH:$(pwd)/aquaflux_fabri"

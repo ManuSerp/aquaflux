@@ -15,7 +15,7 @@
 ## 📦 Installation
 
 ```bash
-pip install aquaflux_core
+pip install aquaflux-core
 ```
 
 ### Development Installation
@@ -106,10 +106,10 @@ print(result)
 
 The Aquaflux project consists of two components:
 
-- **`aquaflux_core`** (this package) - Rust-compiled core operations
-- **[`aquaflux_fabri`](../aquaflux_fabri/)** - Python helper utilities for pipeline building
+- **`aquaflux-core`** (this package) - Rust-compiled core operations
+- **[`aquaflux-fabri`](../aquaflux_fabri/)** - Python helper utilities for pipeline building
 
-`aquaflux_fabri` provides convenience functions and patterns for common pipeline construction tasks, while `aquaflux_core` handles the heavy lifting.
+`aquaflux-fabri` provides convenience functions and patterns for common pipeline construction tasks, while `aquaflux-core` handles the heavy lifting.
 
 ## Development
 
@@ -145,7 +145,7 @@ python test_pipeline.py
 
 ##  Performance
 
-By compiling transformations to Rust and using Polars under the hood, `aquaflux_core` can be significantly faster than pure Python implementations, especially for:
+By compiling transformations to Rust and using Polars under the hood, `aquaflux-core` can be significantly faster than pure Python implementations, especially for:
 
 - Large datasets (> 1M rows)
 - Complex pipeline chains
