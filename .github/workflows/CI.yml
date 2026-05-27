@@ -21,6 +21,9 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aquaflux_core
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -44,6 +47,7 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
+          working-directory: aquaflux_core
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
@@ -60,6 +64,7 @@ jobs:
         with:
           command: sdist
           args: --out dist
+          working-directory: aquaflux_core
       - name: Upload sdist
         uses: actions/upload-artifact@v6
         with:

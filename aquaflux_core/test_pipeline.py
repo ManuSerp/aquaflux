@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test script demonstrating the aquaflux pipeline compilation."""
 
-import aquaflux
+import aquaflux_core as aquaflux
 import pandas
 import polars
 

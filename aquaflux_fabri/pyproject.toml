@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aquaflux_fabri"
+version = "0.1.0"
+description = "Python helpers for building aquaflux data transformation pipelines"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "../LICENSE"}
+dependencies = [
+    "aquaflux_core>=0.1.0",
+]

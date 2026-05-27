@@ -4,7 +4,7 @@ pub mod pipeline;
 use crate::pipeline::Executable;
 use pyo3::prelude::*;
 #[pymodule]
-fn aquaflux(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register the compile_pipeline function
     m.add_function(wrap_pyfunction!(compile_pipeline, m)?)?;
 
