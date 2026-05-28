@@ -18,7 +18,7 @@ The core Rust library providing high-performance data transformation operations:
 
 **Installation:**
 ```bash
-pip install aquaflux_core
+pip install aquaflux-core
 ```
 
 ### [`aquaflux-fabri`](./aquaflux_fabri/)
@@ -30,7 +30,7 @@ Python helper utilities for pipeline building:
 
 **Installation:**
 ```bash
-pip install aquaflux_fabri
+pip install aquaflux-fabri
 ```
 
 ## Quick Start
