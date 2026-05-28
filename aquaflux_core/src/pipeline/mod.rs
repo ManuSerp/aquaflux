@@ -243,3 +243,11 @@ pub enum AggFunction {
     First,
     Last,
 }
+
+// df.lazy()
+//     .group_by([col("category"), col("region")])
+//     .agg([
+//         col("sales").sum().alias("total_sales"),
+//         col("sales").max().alias("max_sale"),
+//     ])
+//     .collect()?;
