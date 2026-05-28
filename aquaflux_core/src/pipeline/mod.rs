@@ -221,3 +221,25 @@ impl Executable for FilterColOp {
             .map_err(|e| format!("Filter operation failed: {}", e))
     }
 }
+
+pub struct GroupByOp {
+    pub group_columns: Vec<String>,
+    pub aggregations: Vec<Aggregation>,
+}
+
+pub struct Aggregation {
+    pub column: String,
+    pub function: AggFunction,
+    pub alias: String,
+}
+
+pub enum AggFunction {
+    Sum,
+    Mean,
+    Min,
+    Max,
+    Count,
+    Std,
+    First,
+    Last,
+}
