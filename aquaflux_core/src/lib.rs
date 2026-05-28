@@ -16,6 +16,7 @@ fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register helper types
     m.add_class::<interface::PyDataType>()?;
     m.add_class::<interface::PyScalarValue>()?;
+    m.add_class::<interface::PyLogicalOperator>()?;
     m.add_class::<CompiledPipeline>()?;
 
     Ok(())

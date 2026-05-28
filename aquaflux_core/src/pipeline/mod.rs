@@ -4,7 +4,7 @@ pub trait Executable {
     fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String>;
 }
 
-// what is really the point of this enum ? cant we just refer to the exceutable trait? Maybe a  better name would eb the operation trait
+// I am still unsure about that enum, is a dyn trait better ? (that woulod avoid the need to maintain it)
 pub enum Op {
     Select(SelectOp),
     FillNa(FillNaOp),
@@ -12,6 +12,8 @@ pub enum Op {
     Rename(RenameOp),
     Drop(DropOp),
     DropNa(DropNaOp),
+    Filter(FilterOp),
+    FilterCol(FilterColOp),
 }
 
 impl Executable for Op {
@@ -23,6 +25,8 @@ impl Executable for Op {
             Op::Rename(op) => op.execute(df),
             Op::Drop(op) => op.execute(df),
             Op::DropNa(op) => op.execute(df),
+            Op::Filter(op) => op.execute(df),
+            Op::FilterCol(op) => op.execute(df),
         }
     }
 }
@@ -158,5 +162,62 @@ impl Executable for DropNaOp {
     fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
         df.drop_nulls(None::<&[&str]>)
             .map_err(|e| format!("Failed to drop nulls: {}", e))
+    }
+}
+
+pub enum LogicalOperator {
+    Eq,    // ==
+    NotEq, // !=
+    Gt,    // >
+    Gte,   // >=
+    Lt,    // <
+    Lte,   // <=
+}
+
+pub struct FilterOp {
+    pub column: String,
+    pub operator: LogicalOperator,
+    pub value: ScalarValue,
+}
+
+impl Executable for FilterOp {
+    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+        let filter_expr = match self.operator {
+            LogicalOperator::Eq => col(&self.column).eq(self.value.scalar_to_expr()),
+            LogicalOperator::NotEq => col(&self.column).neq(self.value.scalar_to_expr()),
+            LogicalOperator::Gt => col(&self.column).gt(self.value.scalar_to_expr()),
+            LogicalOperator::Gte => col(&self.column).gt_eq(self.value.scalar_to_expr()),
+            LogicalOperator::Lt => col(&self.column).lt(self.value.scalar_to_expr()),
+            LogicalOperator::Lte => col(&self.column).lt_eq(self.value.scalar_to_expr()),
+        };
+
+        df.lazy()
+            .filter(filter_expr)
+            .collect()
+            .map_err(|e| format!("Filter operation failed: {}", e))
+    }
+}
+
+pub struct FilterColOp {
+    pub column: String,
+    pub operator: LogicalOperator,
+    pub other_column: String,
+}
+
+impl Executable for FilterColOp {
+    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+        let filter_expr = match self.operator {
+            LogicalOperator::Eq => col(&self.column).eq(col(&self.other_column)),
+            LogicalOperator::NotEq => col(&self.column).neq(col(&self.other_column)),
+            LogicalOperator::Gt => col(&self.column).gt(col(&self.other_column)),
+            LogicalOperator::Gte => col(&self.column).gt_eq(col(&self.other_column)),
+            LogicalOperator::Lt => col(&self.column).lt(col(&self.other_column)),
+            LogicalOperator::Lte => col(&self.column).lt_eq(col(&self.other_column)),
+        };
+
+        df.lazy()
+            .filter(filter_expr)
+            .collect()
+            .map_err(|e| format!("Filter operation failed: {}", e))
     }
 }

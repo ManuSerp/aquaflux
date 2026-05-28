@@ -66,14 +66,15 @@ print(result)
 | `FillNaOp` | Fill missing values | `FillNaOp(["col1"], "default")` |
 | `CastOp` | Cast column types | `CastOp(["amount"], float)` |
 | `RenameOp` | Rename columns | `RenameOp(["old"], ["new"])` |
-| `DropOp` | Drop specific columns
-| `DropNaOp` | Drop rows with missing values
+| `DropOp` | Drop specific columns | `DropOp(["col1", "col2"])` |
+| `DropNaOp` | Drop rows with any null values | `DropNaOp()` |
+| `FilterOp` | Filter rows by comparing column to value | `FilterOp("amount", LogicalOp.Gt, 100)` |
+| `FilterColOp` | Filter rows by comparing two columns | `FilterColOp("amount", LogicalOp.Gt, "threshold")` |
 
-### Planned Operations
+### 🚧 Planned Operations
 
 **Data Cleaning:**
-
-- `FilterOp` - Row filtering based on conditions
+- (All basic cleaning operations now implemented!)
 
 **Aggregation & Grouping:**
 - `GroupByOp` - Group by columns with aggregations (sum, mean, count, etc.)

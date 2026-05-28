@@ -36,6 +36,8 @@ define_operations! {
     PyRenameOp => Rename,
     PyDropOp => Drop,
     PyDropNaOp => DropNa,
+    PyFilterOp => Filter,
+    PyFilterColOp => FilterCol,
 }
 
 #[pyclass(name = "SelectOp", from_py_object)]
@@ -332,5 +334,92 @@ impl PyDropNaOp {
 impl From<PyDropNaOp> for pipeline::DropNaOp {
     fn from(_: PyDropNaOp) -> Self {
         pipeline::DropNaOp {}
+    }
+}
+
+#[pyclass(name = "LogicalOp", from_py_object)]
+#[derive(Clone)]
+pub enum PyLogicalOperator {
+    Eq,    // ==
+    NotEq, // !=
+    Gt,    // >
+    Gte,   // >=
+    Lt,    // <
+    Lte,   // <=
+}
+
+impl From<PyLogicalOperator> for pipeline::LogicalOperator {
+    fn from(py_lop: PyLogicalOperator) -> Self {
+        match py_lop {
+            PyLogicalOperator::Eq => pipeline::LogicalOperator::Eq,
+            PyLogicalOperator::NotEq => pipeline::LogicalOperator::NotEq,
+            PyLogicalOperator::Gt => pipeline::LogicalOperator::Gt,
+            PyLogicalOperator::Gte => pipeline::LogicalOperator::Gte,
+            PyLogicalOperator::Lt => pipeline::LogicalOperator::Lt,
+            PyLogicalOperator::Lte => pipeline::LogicalOperator::Lte,
+        }
+    }
+}
+
+#[pyclass(name = "FilterOp", from_py_object)]
+#[derive(Clone)]
+pub struct PyFilterOp {
+    #[pyo3(get, set)]
+    pub column: String,
+    #[pyo3(get, set)]
+    pub operator: PyLogicalOperator,
+    #[pyo3(get, set)]
+    pub value: PyScalarValue,
+}
+
+#[pymethods]
+impl PyFilterOp {
+    #[new]
+    pub fn new(column: String, operator: PyLogicalOperator, value: PyScalarValueInput) -> Self {
+        PyFilterOp {
+            column,
+            operator,
+            value: value.into(),
+        }
+    }
+}
+
+impl From<PyFilterOp> for pipeline::FilterOp {
+    fn from(py_op: PyFilterOp) -> Self {
+        pipeline::FilterOp {
+            column: py_op.column,
+            operator: py_op.operator.into(),
+            value: py_op.value.into(),
+        }
+    }
+}
+
+#[pyclass(name = "FilterColOp", from_py_object)]
+#[derive(Clone)]
+pub struct PyFilterColOp {
+    pub column: String,
+    pub operator: PyLogicalOperator,
+    pub other_column: String,
+}
+
+#[pymethods]
+impl PyFilterColOp {
+    #[new]
+    pub fn new(column: String, operator: PyLogicalOperator, other_column: String) -> Self {
+        PyFilterColOp {
+            column,
+            operator,
+            other_column,
+        }
+    }
+}
+
+impl From<PyFilterColOp> for pipeline::FilterColOp {
+    fn from(py_op: PyFilterColOp) -> Self {
+        pipeline::FilterColOp {
+            column: py_op.column,
+            operator: py_op.operator.into(),
+            other_column: py_op.other_column,
+        }
     }
 }
