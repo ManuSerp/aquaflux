@@ -4,11 +4,14 @@ pub trait Executable {
     fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String>;
 }
 
+// what is really the point of this enum ? cant we just refer to the exceutable trait? Maybe a  better name would eb the operation trait
 pub enum Op {
     Select(SelectOp),
     FillNa(FillNaOp),
     Cast(CastOp),
     Rename(RenameOp),
+    Drop(DropOp),
+    DropNa(DropNaOp),
 }
 
 impl Executable for Op {
@@ -18,6 +21,8 @@ impl Executable for Op {
             Op::FillNa(op) => op.execute(df),
             Op::Cast(op) => op.execute(df),
             Op::Rename(op) => op.execute(df),
+            Op::Drop(op) => op.execute(df),
+            Op::DropNa(op) => op.execute(df),
         }
     }
 }
@@ -134,5 +139,24 @@ impl Executable for RenameOp {
             .collect()
             .map_err(|e| format!("Rename operation failed: {}", e))?;
         Ok(temp.drop_many(self.columns.iter()))
+    }
+}
+
+pub struct DropOp {
+    pub columns: Vec<String>,
+}
+
+impl Executable for DropOp {
+    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+        Ok(df.drop_many(self.columns.iter()))
+    }
+}
+
+pub struct DropNaOp {}
+
+impl Executable for DropNaOp {
+    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+        df.drop_nulls(None::<&[&str]>)
+            .map_err(|e| format!("Failed to drop nulls: {}", e))
     }
 }

@@ -66,12 +66,13 @@ print(result)
 | `FillNaOp` | Fill missing values | `FillNaOp(["col1"], "default")` |
 | `CastOp` | Cast column types | `CastOp(["amount"], float)` |
 | `RenameOp` | Rename columns | `RenameOp(["old"], ["new"])` |
+| `DropOp` | Drop specific columns
+| `DropNaOp` | Drop rows with missing values
 
 ### Planned Operations
 
 **Data Cleaning:**
-- `DropOp` - Drop specific columns
-- `DropNaOp` - Drop rows with missing values
+
 - `FilterOp` - Row filtering based on conditions
 
 **Aggregation & Grouping:**

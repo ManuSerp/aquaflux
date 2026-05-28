@@ -4,6 +4,40 @@ use pyo3::prelude::*;
 /// Python-facing operation types
 /// These are separate from internal pipeline types to keep concerns separated
 
+// SINGLE SOURCE OF TRUTH: Define all operations here
+// Format: (PyType, PipelineVariant)
+macro_rules! define_operations {
+    ($($py_type:ty => $variant:ident),* $(,)?) => {
+        // Generate the registration list
+        pub const ALL_OPERATION_TYPES: &[fn(&Bound<'_, PyModule>) -> PyResult<()>] = &[
+            $(|m| { m.add_class::<$py_type>()?; Ok(()) },)*
+        ];
+
+        // Generate the extraction function
+        pub fn extract_operation(op: &Bound<'_, PyAny>) -> PyResult<pipeline::Op> {
+            $(
+                if let Ok(extracted) = op.extract::<$py_type>() {
+                    return Ok(pipeline::Op::$variant(extracted.into()));
+                }
+            )*
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+                "Unknown operation type: {}",
+                op.get_type().name()?
+            )))
+        }
+    };
+}
+
+// here again to we need to use the enum for the op or could we just directly refer to the op itself driectly.
+define_operations! {
+    PySelectOp => Select,
+    PyFillNaOp => FillNa,
+    PyCastOp => Cast,
+    PyRenameOp => Rename,
+    PyDropOp => Drop,
+    PyDropNaOp => DropNa,
+}
+
 #[pyclass(name = "SelectOp", from_py_object)]
 #[derive(Clone)]
 pub struct PySelectOp {
@@ -257,5 +291,46 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyScalarValueInput {
         Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
             "Expected int, float, str, bool, or ScalarValue",
         ))
+    }
+}
+
+#[pyclass(name = "DropOp", from_py_object)]
+#[derive(Clone)]
+pub struct PyDropOp {
+    #[pyo3(get, set)]
+    pub columns: Vec<String>,
+}
+
+#[pymethods]
+impl PyDropOp {
+    #[new]
+    pub fn new(columns: Vec<String>) -> Self {
+        PyDropOp { columns }
+    }
+}
+
+impl From<PyDropOp> for pipeline::DropOp {
+    fn from(py_op: PyDropOp) -> Self {
+        pipeline::DropOp {
+            columns: py_op.columns,
+        }
+    }
+}
+
+#[pyclass(name = "DropNaOp", from_py_object)]
+#[derive(Clone)]
+pub struct PyDropNaOp {}
+
+#[pymethods]
+impl PyDropNaOp {
+    #[new]
+    pub fn new() -> Self {
+        PyDropNaOp {}
+    }
+}
+
+impl From<PyDropNaOp> for pipeline::DropNaOp {
+    fn from(_: PyDropNaOp) -> Self {
+        pipeline::DropNaOp {}
     }
 }
