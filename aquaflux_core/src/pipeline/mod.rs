@@ -14,6 +14,7 @@ pub enum Op {
     DropNa(DropNaOp),
     Filter(FilterOp),
     FilterCol(FilterColOp),
+    GroupBy(GroupByOp),
 }
 
 impl Executable for Op {
@@ -27,6 +28,7 @@ impl Executable for Op {
             Op::DropNa(op) => op.execute(df),
             Op::Filter(op) => op.execute(df),
             Op::FilterCol(op) => op.execute(df),
+            Op::GroupBy(op) => op.execute(df),
         }
     }
 }
@@ -243,11 +245,39 @@ pub enum AggFunction {
     First,
     Last,
 }
+impl AggFunction {
+    pub fn apply(&self, expr: Expr) -> Expr {
+        match self {
+            Self::Sum => expr.sum(),
+            Self::Mean => expr.mean(),
+            Self::Min => expr.min(),
+            Self::Max => expr.max(),
+            Self::Count => expr.count(),
+            Self::Std => expr.std(1),
+            Self::First => expr.first(),
+            Self::Last => expr.last(),
+        }
+    }
+}
 
-// df.lazy()
-//     .group_by([col("category"), col("region")])
-//     .agg([
-//         col("sales").sum().alias("total_sales"),
-//         col("sales").max().alias("max_sale"),
-//     ])
-//     .collect()?;
+impl Executable for GroupByOp {
+    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+        let group_exprs: Vec<Expr> = self
+            .group_columns
+            .iter()
+            .map(|col_name| col(col_name))
+            .collect();
+
+        let agg_exprs: Vec<Expr> = self
+            .aggregations
+            .iter()
+            .map(|agg| agg.function.apply(col(&agg.column)).alias(&agg.alias))
+            .collect();
+
+        df.lazy()
+            .group_by(group_exprs)
+            .agg(agg_exprs)
+            .collect()
+            .map_err(|e| format!("Group by operation failed: {}", e))
+    }
+}
