@@ -70,6 +70,7 @@ print(result)
 | `DropNaOp` | Drop rows with any null values | `DropNaOp()` |
 | `FilterOp` | Filter rows by comparing column to value | `FilterOp("amount", LogicalOp.Gt, 100)` |
 | `FilterColOp` | Filter rows by comparing two columns | `FilterColOp("amount", LogicalOp.Gt, "threshold")` |
+| `GroupByOp` | Group by columns and aggregate | `GroupByOp(["customer"], [('sale',AggOp.Sum,'sales_sum')])` |
 
 ### 🚧 Planned Operations
 
@@ -77,7 +78,7 @@ print(result)
 - (All basic cleaning operations now implemented!)
 
 **Aggregation & Grouping:**
-- `GroupByOp` - Group by columns with aggregations (sum, mean, count, etc.) WIP
+- all done
 
 **Feature Engineering:**
 - `WithColumnOp` / `MutateOp` - Create new columns from expressions

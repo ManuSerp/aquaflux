@@ -38,6 +38,7 @@ define_operations! {
     PyDropNaOp => DropNa,
     PyFilterOp => Filter,
     PyFilterColOp => FilterCol,
+    PyGroupByOp => GroupBy,
 }
 
 #[pyclass(name = "SelectOp", from_py_object)]
@@ -420,6 +421,73 @@ impl From<PyFilterColOp> for pipeline::FilterColOp {
             column: py_op.column,
             operator: py_op.operator.into(),
             other_column: py_op.other_column,
+        }
+    }
+}
+
+#[pyclass(name = "AggOp", from_py_object)]
+#[derive(Clone)]
+pub enum PyAggregationFunc {
+    Sum,
+    Mean,
+    Min,
+    Max,
+    Count,
+    Std,
+    First,
+    Last,
+}
+
+impl From<PyAggregationFunc> for pipeline::AggFunction {
+    fn from(py_aggop: PyAggregationFunc) -> Self {
+        match py_aggop {
+            PyAggregationFunc::Sum => pipeline::AggFunction::Sum,
+            PyAggregationFunc::Mean => pipeline::AggFunction::Mean,
+            PyAggregationFunc::Min => pipeline::AggFunction::Min,
+            PyAggregationFunc::Max => pipeline::AggFunction::Max,
+            PyAggregationFunc::Count => pipeline::AggFunction::Count,
+            PyAggregationFunc::Std => pipeline::AggFunction::Std,
+            PyAggregationFunc::First => pipeline::AggFunction::First,
+            PyAggregationFunc::Last => pipeline::AggFunction::Last,
+        }
+    }
+}
+
+#[pyclass(name = "GroupByOp", from_py_object)]
+#[derive(Clone)]
+pub struct PyGroupByOp {
+    #[pyo3(get, set)]
+    pub group_columns: Vec<String>,
+    pub aggregations: Vec<(String, PyAggregationFunc, String)>,
+}
+
+#[pymethods]
+impl PyGroupByOp {
+    #[new]
+    pub fn new(
+        group_columns: Vec<String>,
+        aggregations: Vec<(String, PyAggregationFunc, String)>,
+    ) -> Self {
+        PyGroupByOp {
+            group_columns,
+            aggregations,
+        }
+    }
+}
+
+impl From<PyGroupByOp> for pipeline::GroupByOp {
+    fn from(py_op: PyGroupByOp) -> Self {
+        pipeline::GroupByOp {
+            group_columns: py_op.group_columns,
+            aggregations: py_op
+                .aggregations
+                .iter()
+                .map(|agg| pipeline::Aggregation {
+                    column: agg.0.clone(),
+                    function: agg.1.clone().into(),
+                    alias: agg.2.clone(),
+                })
+                .collect(),
         }
     }
 }

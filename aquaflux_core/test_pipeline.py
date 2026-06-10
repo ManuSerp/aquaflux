@@ -60,3 +60,28 @@ result = pipeline.execute(test_data)
 
 print("\n Pipeline Execution Result:")
 print(result)
+
+# GroupBy operation
+groupby_op = aquaflux.GroupByOp(
+    group_columns=["category"],
+    aggregations=[
+        ("sales", aquaflux.AggOp.Sum, "total_sales"),
+        ("sales", aquaflux.AggOp.Mean, "avg_sales"),
+    ],
+)
+
+test_data_groupby = pandas.DataFrame(
+    {
+        "category": ["A", "B", "A", "B", "A"],
+        "sales": [100.0, 200.0, 150.0, 300.0, 120.0],
+    }
+)
+
+print("\nGroupBy Test Data:")
+print(test_data_groupby)
+
+pipeline_groupby = aquaflux.compile_pipeline([groupby_op])
+result_groupby = pipeline_groupby.execute(test_data_groupby)
+
+print("\nGroupBy Result:")
+print(result_groupby)

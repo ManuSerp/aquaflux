@@ -17,6 +17,7 @@ fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<interface::PyDataType>()?;
     m.add_class::<interface::PyScalarValue>()?;
     m.add_class::<interface::PyLogicalOperator>()?;
+    m.add_class::<interface::PyAggregationFunc>()?;
     m.add_class::<CompiledPipeline>()?;
 
     Ok(())
