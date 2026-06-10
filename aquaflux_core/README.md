@@ -77,7 +77,7 @@ print(result)
 - (All basic cleaning operations now implemented!)
 
 **Aggregation & Grouping:**
-- `GroupByOp` - Group by columns with aggregations (sum, mean, count, etc.)
+- `GroupByOp` - Group by columns with aggregations (sum, mean, count, etc.) WIP
 
 **Feature Engineering:**
 - `WithColumnOp` / `MutateOp` - Create new columns from expressions
