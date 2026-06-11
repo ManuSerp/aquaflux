@@ -281,3 +281,20 @@ impl Executable for GroupByOp {
             .map_err(|e| format!("Group by operation failed: {}", e))
     }
 }
+
+
+pub struct MutExpr{
+    pub column: String,
+    pub operator: MutOperator,
+    pub value: ScalarValue | String,
+
+}
+
+pub struct Mutation {
+    pub expr: MutExpr,
+    pub alias: Option<String>,
+}
+
+pub struct WithColumnsOp {
+    mutations: Vec<Mutation>,
+}
