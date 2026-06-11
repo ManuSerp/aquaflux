@@ -282,12 +282,22 @@ impl Executable for GroupByOp {
     }
 }
 
+pub enum MutOperator {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
 
-pub struct MutExpr{
+pub enum Operand {
+    Scalar(ScalarValue),
+    Column(String),
+}
+
+pub struct MutExpr {
     pub column: String,
     pub operator: MutOperator,
-    pub value: ScalarValue | String,
-
+    pub rv_operand: Operand,
 }
 
 pub struct Mutation {
@@ -296,5 +306,39 @@ pub struct Mutation {
 }
 
 pub struct WithColumnsOp {
-    mutations: Vec<Mutation>,
+    pub mutations: Vec<Mutation>,
+}
+
+impl Executable for WithColumnsOp {
+    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+        let mut_exp: Vec<Expr> = self
+            .mutations
+            .iter()
+            .map(|mutation| {
+                let right_expr = match &mutation.expr.rv_operand {
+                    Operand::Scalar(scalar) => scalar.scalar_to_expr(),
+                    Operand::Column(col_name) => col(col_name),
+                };
+
+                let base_expr = col(&mutation.expr.column);
+                // this should part of the enum as an impl
+                let expr = match mutation.expr.operator {
+                    MutOperator::Add => base_expr + right_expr,
+                    MutOperator::Sub => base_expr - right_expr,
+                    MutOperator::Mul => base_expr * right_expr,
+                    MutOperator::Div => base_expr / right_expr,
+                };
+
+                if let Some(alias) = &mutation.alias {
+                    expr.alias(alias)
+                } else {
+                    expr
+                }
+            })
+            .collect();
+        df.lazy()
+            .with_columns(mut_exp)
+            .collect()
+            .map_err(|e| format!("With columns operation failed: {}", e))
+    }
 }
