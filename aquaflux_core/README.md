@@ -81,7 +81,7 @@ print(result)
 - all done
 
 **Feature Engineering:**
-- `WithColumnOp` / `MutateOp` - Create new columns from expressions
+- `WithColumnOp` / `MutateOp` - Create new columns from expressions WIP
   - Example: `total = price * quantity`, `log_amount = log(amount)`
 
 **Scaling & Normalization:**

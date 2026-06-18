@@ -53,6 +53,7 @@ impl From<DataType> for polars::prelude::DataTypeExpr {
     }
 }
 
+#[derive(Clone)]
 pub enum ScalarValue {
     Int64(i64),
     Float64(f64),
@@ -289,9 +290,30 @@ pub enum MutOperator {
     Div,
 }
 
+impl MutOperator {
+    pub fn to_expr(&self, left: Expr, right: Expr) -> Expr {
+        match self {
+            MutOperator::Add => left + right,
+            MutOperator::Sub => left - right,
+            MutOperator::Mul => left * right,
+            MutOperator::Div => left / right,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub enum Operand {
     Scalar(ScalarValue),
     Column(String),
+}
+
+impl From<Operand> for Expr {
+    fn from(op: Operand) -> Self {
+        match op {
+            Operand::Scalar(scalar) => scalar.scalar_to_expr(),
+            Operand::Column(col_name) => col(&col_name),
+        }
+    }
 }
 
 pub struct MutExpr {
@@ -315,19 +337,10 @@ impl Executable for WithColumnsOp {
             .mutations
             .iter()
             .map(|mutation| {
-                let right_expr = match &mutation.expr.rv_operand {
-                    Operand::Scalar(scalar) => scalar.scalar_to_expr(),
-                    Operand::Column(col_name) => col(col_name),
-                };
+                let right_expr: Expr = mutation.expr.rv_operand.clone().into();
 
                 let base_expr = col(&mutation.expr.column);
-                // this should part of the enum as an impl
-                let expr = match mutation.expr.operator {
-                    MutOperator::Add => base_expr + right_expr,
-                    MutOperator::Sub => base_expr - right_expr,
-                    MutOperator::Mul => base_expr * right_expr,
-                    MutOperator::Div => base_expr / right_expr,
-                };
+                let expr = mutation.expr.operator.to_expr(base_expr, right_expr);
 
                 if let Some(alias) = &mutation.alias {
                     expr.alias(alias)
