@@ -157,3 +157,7 @@ By compiling transformations to Rust and using Polars under the hood, `aquaflux-
 - **Polars** - The underlying DataFrame library
 - **PyO3** - Rust-Python bindings
 - **scikit-learn** - Inspiration for the pipeline API
+
+## Idea of flow
+
+For each transformer, AquaFlux attempts to automatically translate it into a native AquaFlux instruction. If no translation is available, a user-defined translation can be provided. As a final fallback, the transformer is ahead-of-time compiled into native machine code and embedded into the execution pipeline, avoiding runtime interpretation overhead.
