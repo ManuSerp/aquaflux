@@ -15,6 +15,7 @@ pub enum Op {
     Filter(FilterOp),
     FilterCol(FilterColOp),
     GroupBy(GroupByOp),
+    WithColumns(WithColumnsOp),
 }
 
 impl Executable for Op {
@@ -29,6 +30,7 @@ impl Executable for Op {
             Op::Filter(op) => op.execute(df),
             Op::FilterCol(op) => op.execute(df),
             Op::GroupBy(op) => op.execute(df),
+            Op::WithColumns(op) => op.execute(df),
         }
     }
 }

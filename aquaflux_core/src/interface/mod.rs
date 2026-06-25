@@ -491,3 +491,14 @@ impl From<PyGroupByOp> for pipeline::GroupByOp {
         }
     }
 }
+
+pub struct PyMut {
+    pub string_expr: String,
+}
+
+#[pyclass(name = "WithColumns", from_py_object)]
+#[derive(Clone)]
+pub struct PyWithColumns {
+    #[pyo3(get, set)]
+    pub mutations: Vec<PyMut>,
+}
