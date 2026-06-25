@@ -492,6 +492,7 @@ impl From<PyGroupByOp> for pipeline::GroupByOp {
     }
 }
 
+#[derive(Clone)]
 pub struct PyMut {
     pub string_expr: String,
 }
