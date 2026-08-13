@@ -536,7 +536,7 @@ impl PyCol {
 #[derive(Clone)]
 pub struct PyMut {
     #[pyo3(get, set)]
-    pub string_expr: String,
+    pub string_expr: String, //TODO here string is for column, only int or float can be seen as scalar, maybe we need to improve to also handle string as scalar, but for now we will just use string for column name
     #[pyo3(get, set)]
     pub alias: Option<String>,
 }
@@ -576,6 +576,14 @@ impl From<PyMut> for pipeline::Mutation {
 pub struct PyWithColumns {
     #[pyo3(get, set)]
     pub mutations: Vec<PyMut>,
+}
+
+#[pymethods]
+impl PyWithColumns {
+    #[new]
+    pub fn new(mutations: Vec<PyMut>) -> Self {
+        PyWithColumns { mutations }
+    }
 }
 
 impl From<PyWithColumns> for pipeline::WithColumnsOp {

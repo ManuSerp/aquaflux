@@ -71,6 +71,7 @@ print(result)
 | `FilterOp` | Filter rows by comparing column to value | `FilterOp("amount", LogicalOp.Gt, 100)` |
 | `FilterColOp` | Filter rows by comparing two columns | `FilterColOp("amount", LogicalOp.Gt, "threshold")` |
 | `GroupByOp` | Group by columns and aggregate | `GroupByOp(["customer"], [('sale',AggOp.Sum,'sales_sum')])` |
+| `WithColumnOp` | Create new columns from expressions | `WithColumns([(Col("a") + Col("b")).alias("sum_ab"),(Col("a") * 2).alias("a_doubled"),])` |
 
 ### 🚧 Planned Operations
 
@@ -83,6 +84,8 @@ print(result)
 **Feature Engineering:**
 - `WithColumnOp` / `MutateOp` - Create new columns from expressions WIP
   - Example: `total = price * quantity`, `log_amount = log(amount)`
+  - THIS IS DONE as a first implementation, support stuff like COL +|*|-|/ COL|INT
+  -  but now it can be improved to support scalar float and scalar string (string right directly detect to columns)
 
 **Scaling & Normalization:**
 - `StandardScaleOp` - Standardize features (mean=0, std=1)
