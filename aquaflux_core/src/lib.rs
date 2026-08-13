@@ -1,6 +1,6 @@
+pub mod compiler;
 pub mod interface;
 pub mod pipeline;
-
 use crate::pipeline::Executable;
 use pyo3::prelude::*;
 #[pymodule]
@@ -18,6 +18,8 @@ fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<interface::PyScalarValue>()?;
     m.add_class::<interface::PyLogicalOperator>()?;
     m.add_class::<interface::PyAggregationFunc>()?;
+    m.add_class::<interface::PyMut>()?;
+    m.add_class::<interface::PyCol>()?;
     m.add_class::<CompiledPipeline>()?;
 
     Ok(())

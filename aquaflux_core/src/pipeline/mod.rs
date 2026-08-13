@@ -303,6 +303,20 @@ impl MutOperator {
     }
 }
 
+impl TryFrom<String> for MutOperator {
+    type Error = String;
+
+    fn try_from(op: String) -> Result<Self, Self::Error> {
+        match op.as_str() {
+            "+" => Ok(MutOperator::Add),
+            "-" => Ok(MutOperator::Sub),
+            "*" => Ok(MutOperator::Mul),
+            "/" => Ok(MutOperator::Div),
+            _ => Err(format!("Unknown operator: {}", op)),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Operand {
     Scalar(ScalarValue),
@@ -319,6 +333,7 @@ impl From<Operand> for Expr {
 }
 
 pub struct MutExpr {
+    //TODO I dont know if this ever happens in data pipelines but a more correct way would be to recursively have lv and rv as MutExpr (would be the case in compilers)
     pub column: String,
     pub operator: MutOperator,
     pub rv_operand: Operand,

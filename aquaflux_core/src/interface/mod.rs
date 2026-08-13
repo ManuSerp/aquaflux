@@ -1,3 +1,5 @@
+pub mod helper;
+use crate::interface::helper::extract_expr;
 use crate::pipeline;
 use pyo3::prelude::*;
 
@@ -39,6 +41,7 @@ define_operations! {
     PyFilterOp => Filter,
     PyFilterColOp => FilterCol,
     PyGroupByOp => GroupBy,
+    PyWithColumns => WithColumns,
 }
 
 #[pyclass(name = "SelectOp", from_py_object)]
@@ -492,9 +495,80 @@ impl From<PyGroupByOp> for pipeline::GroupByOp {
     }
 }
 
+#[pyclass(name = "Col")]
+#[derive(Clone)]
+pub struct PyCol {
+    pub name: String,
+}
+
+#[pymethods]
+impl PyCol {
+    #[new]
+    pub fn new(name: String) -> Self {
+        PyCol { name }
+    }
+
+    // Col("a") + Col("b") -> Mutation with "a + b"
+    // Col("a") + 2 -> Mutation with "a + 2"
+    pub fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} + {}", self.name, other_expr), None))
+    }
+
+    pub fn __sub__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} - {}", self.name, other_expr), None))
+    }
+
+    pub fn __mul__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} * {}", self.name, other_expr), None))
+    }
+
+    pub fn __truediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} / {}", self.name, other_expr), None))
+    }
+}
+
+// i want to way to do the Mut object: parse string (pseudo compile) or use python operator to straight do it pandas way e,g mut = col1 + col2, mut = col1 * 2
+#[pyclass(name = "Mutation", from_py_object)]
 #[derive(Clone)]
 pub struct PyMut {
+    #[pyo3(get, set)]
     pub string_expr: String,
+    #[pyo3(get, set)]
+    pub alias: Option<String>,
+}
+#[pymethods]
+impl PyMut {
+    #[new]
+    pub fn new(string_expr: String, alias: Option<String>) -> Self {
+        PyMut { string_expr, alias }
+    }
+    pub fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("({}) + {}", self.string_expr, other_expr),
+            None,
+        ))
+    }
+    // might be a better way to set alias
+
+    pub fn alias(&self, name: String) -> PyMut {
+        PyMut::new(self.string_expr.clone(), Some(name))
+    }
+}
+
+impl From<PyMut> for pipeline::Mutation {
+    fn from(py_mut: PyMut) -> Self {
+        let mut_expr = crate::interface::helper::string_expr_to_mut_expr(&py_mut.string_expr)
+            .expect("Failed to convert string expression to MutExpr");
+        pipeline::Mutation {
+            expr: mut_expr,
+            alias: py_mut.alias,
+        }
+    }
 }
 
 #[pyclass(name = "WithColumns", from_py_object)]
@@ -502,4 +576,12 @@ pub struct PyMut {
 pub struct PyWithColumns {
     #[pyo3(get, set)]
     pub mutations: Vec<PyMut>,
+}
+
+impl From<PyWithColumns> for pipeline::WithColumnsOp {
+    fn from(py_op: PyWithColumns) -> Self {
+        pipeline::WithColumnsOp {
+            mutations: py_op.mutations.into_iter().map(|m| m.into()).collect(),
+        }
+    }
 }
