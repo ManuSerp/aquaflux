@@ -1,7 +1,7 @@
 pub mod compiler;
 pub mod interface;
 pub mod pipeline;
-use crate::pipeline::Executable;
+use crate::pipeline::{IntoLazy, LazyExecutable};
 use pyo3::prelude::*;
 #[pymodule]
 fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -41,16 +41,24 @@ impl CompiledPipeline {
         py: Python<'py>,
         data: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let mut df = pipeline::dataframe::from_python(data)?;
+        let df = pipeline::dataframe::from_python(data)?;
 
-        // Execute operations
+        // Convert to lazy once at the start
+        let mut lf = df.lazy();
+
+        // Execute all operations on the LazyFrame
         for op in &self.instructions {
-            df = op
-                .execute(df)
+            lf = op
+                .execute_lazy(lf)
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
         }
 
-        pipeline::dataframe::to_python(py, df)
+        // Collect only once at the end
+        let result = lf.collect().map_err(|e: polars::prelude::PolarsError| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
+        })?;
+
+        pipeline::dataframe::to_python(py, result)
     }
 }
 

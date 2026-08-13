@@ -1,7 +1,11 @@
 pub mod dataframe;
 use polars::prelude::*;
-pub trait Executable {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String>;
+
+pub use polars::prelude::IntoLazy;
+
+/// Trait for operations that work on LazyFrames
+pub trait LazyExecutable {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String>;
 }
 
 // I am still unsure about that enum, is a dyn trait better ? (that woulod avoid the need to maintain it)
@@ -18,19 +22,19 @@ pub enum Op {
     WithColumns(WithColumnsOp),
 }
 
-impl Executable for Op {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+impl LazyExecutable for Op {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
         match self {
-            Op::Select(op) => op.execute(df),
-            Op::FillNa(op) => op.execute(df),
-            Op::Cast(op) => op.execute(df),
-            Op::Rename(op) => op.execute(df),
-            Op::Drop(op) => op.execute(df),
-            Op::DropNa(op) => op.execute(df),
-            Op::Filter(op) => op.execute(df),
-            Op::FilterCol(op) => op.execute(df),
-            Op::GroupBy(op) => op.execute(df),
-            Op::WithColumns(op) => op.execute(df),
+            Op::Select(op) => op.execute_lazy(lf),
+            Op::FillNa(op) => op.execute_lazy(lf),
+            Op::Cast(op) => op.execute_lazy(lf),
+            Op::Rename(op) => op.execute_lazy(lf),
+            Op::Drop(op) => op.execute_lazy(lf),
+            Op::DropNa(op) => op.execute_lazy(lf),
+            Op::Filter(op) => op.execute_lazy(lf),
+            Op::FilterCol(op) => op.execute_lazy(lf),
+            Op::GroupBy(op) => op.execute_lazy(lf),
+            Op::WithColumns(op) => op.execute_lazy(lf),
         }
     }
 }
@@ -78,10 +82,10 @@ pub struct SelectOp {
     pub columns: Vec<String>,
 }
 
-impl Executable for SelectOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
-        df.select(&self.columns)
-            .map_err(|e| format!("Select operation failed: {}", e))
+impl LazyExecutable for SelectOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+        let col_exprs: Vec<Expr> = self.columns.iter().map(|c| col(c)).collect();
+        Ok(lf.select(col_exprs))
     }
 }
 
@@ -90,22 +94,17 @@ pub struct FillNaOp {
     pub value: ScalarValue,
 }
 
-impl Executable for FillNaOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+impl LazyExecutable for FillNaOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
         let fill_expr = self.value.scalar_to_expr();
 
-        // Create expressions for all columns
         let exprs: Vec<Expr> = self
             .columns
             .iter()
             .map(|col_name| col(col_name).fill_null(fill_expr.clone()))
             .collect();
 
-        // Apply all at once
-        df.lazy()
-            .with_columns(exprs)
-            .collect()
-            .map_err(|e| format!("Fill null failed: {}", e))
+        Ok(lf.with_columns(exprs))
     }
 }
 
@@ -114,18 +113,15 @@ pub struct CastOp {
     pub dtype: DataType,
 }
 
-impl Executable for CastOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+impl LazyExecutable for CastOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
         let exprs: Vec<Expr> = self
             .columns
             .iter()
             .map(|col_name| col(col_name).cast(self.dtype.clone()))
             .collect();
 
-        df.lazy()
-            .with_columns(exprs)
-            .collect()
-            .map_err(|e| format!("Cast operation failed: {}", e))
+        Ok(lf.with_columns(exprs))
     }
 }
 
@@ -134,20 +130,9 @@ pub struct RenameOp {
     pub new_names: Vec<String>,
 }
 
-impl Executable for RenameOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
-        let exprs: Vec<Expr> = self
-            .columns
-            .iter()
-            .zip(self.new_names.iter())
-            .map(|(old, new)| col(old).alias(new))
-            .collect();
-        let temp = df
-            .lazy()
-            .with_columns(exprs)
-            .collect()
-            .map_err(|e| format!("Rename operation failed: {}", e))?;
-        Ok(temp.drop_many(self.columns.iter()))
+impl LazyExecutable for RenameOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+        Ok(lf.rename(&self.columns, &self.new_names, true))
     }
 }
 
@@ -155,18 +140,18 @@ pub struct DropOp {
     pub columns: Vec<String>,
 }
 
-impl Executable for DropOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
-        Ok(df.drop_many(self.columns.iter()))
+impl LazyExecutable for DropOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+        let exclude_cols: Vec<&str> = self.columns.iter().map(|s| s.as_str()).collect();
+        Ok(lf.select([all().exclude_cols(exclude_cols).as_expr()]))
     }
 }
 
 pub struct DropNaOp {}
 
-impl Executable for DropNaOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
-        df.drop_nulls(None::<&[&str]>)
-            .map_err(|e| format!("Failed to drop nulls: {}", e))
+impl LazyExecutable for DropNaOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+        Ok(lf.drop_nulls(None))
     }
 }
 
@@ -185,8 +170,8 @@ pub struct FilterOp {
     pub value: ScalarValue,
 }
 
-impl Executable for FilterOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+impl LazyExecutable for FilterOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
         let filter_expr = match self.operator {
             LogicalOperator::Eq => col(&self.column).eq(self.value.scalar_to_expr()),
             LogicalOperator::NotEq => col(&self.column).neq(self.value.scalar_to_expr()),
@@ -196,10 +181,7 @@ impl Executable for FilterOp {
             LogicalOperator::Lte => col(&self.column).lt_eq(self.value.scalar_to_expr()),
         };
 
-        df.lazy()
-            .filter(filter_expr)
-            .collect()
-            .map_err(|e| format!("Filter operation failed: {}", e))
+        Ok(lf.filter(filter_expr))
     }
 }
 
@@ -209,8 +191,8 @@ pub struct FilterColOp {
     pub other_column: String,
 }
 
-impl Executable for FilterColOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+impl LazyExecutable for FilterColOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
         let filter_expr = match self.operator {
             LogicalOperator::Eq => col(&self.column).eq(col(&self.other_column)),
             LogicalOperator::NotEq => col(&self.column).neq(col(&self.other_column)),
@@ -220,10 +202,7 @@ impl Executable for FilterColOp {
             LogicalOperator::Lte => col(&self.column).lt_eq(col(&self.other_column)),
         };
 
-        df.lazy()
-            .filter(filter_expr)
-            .collect()
-            .map_err(|e| format!("Filter operation failed: {}", e))
+        Ok(lf.filter(filter_expr))
     }
 }
 
@@ -263,8 +242,8 @@ impl AggFunction {
     }
 }
 
-impl Executable for GroupByOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+impl LazyExecutable for GroupByOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
         let group_exprs: Vec<Expr> = self
             .group_columns
             .iter()
@@ -277,11 +256,7 @@ impl Executable for GroupByOp {
             .map(|agg| agg.function.apply(col(&agg.column)).alias(&agg.alias))
             .collect();
 
-        df.lazy()
-            .group_by(group_exprs)
-            .agg(agg_exprs)
-            .collect()
-            .map_err(|e| format!("Group by operation failed: {}", e))
+        Ok(lf.group_by(group_exprs).agg(agg_exprs))
     }
 }
 
@@ -348,8 +323,8 @@ pub struct WithColumnsOp {
     pub mutations: Vec<Mutation>,
 }
 
-impl Executable for WithColumnsOp {
-    fn execute(&self, df: dataframe::DataFrame) -> Result<dataframe::DataFrame, String> {
+impl LazyExecutable for WithColumnsOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
         let mut_exp: Vec<Expr> = self
             .mutations
             .iter()
@@ -366,9 +341,7 @@ impl Executable for WithColumnsOp {
                 }
             })
             .collect();
-        df.lazy()
-            .with_columns(mut_exp)
-            .collect()
-            .map_err(|e| format!("With columns operation failed: {}", e))
+
+        Ok(lf.with_columns(mut_exp))
     }
 }
