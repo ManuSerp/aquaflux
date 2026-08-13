@@ -15,3 +15,11 @@ dependencies = [
     "polars",
     "pyarrow"
 ]
+
+#  benchmark dependencies
+[project.optional-dependencies]
+benchmark = [
+    "numpy",
+    "pandas",
+    "polars"
+]
