@@ -515,9 +515,20 @@ impl PyCol {
         Ok(PyMut::new(format!("{} + {}", self.name, other_expr), None))
     }
 
+    // 2 + Col("a") -> Mutation with "2 + a"
+    pub fn __radd__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} + {}", other_expr, self.name), None))
+    }
+
     pub fn __sub__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
         let other_expr = extract_expr(other)?;
         Ok(PyMut::new(format!("{} - {}", self.name, other_expr), None))
+    }
+
+    pub fn __rsub__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} - {}", other_expr, self.name), None))
     }
 
     pub fn __mul__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
@@ -525,9 +536,19 @@ impl PyCol {
         Ok(PyMut::new(format!("{} * {}", self.name, other_expr), None))
     }
 
+    pub fn __rmul__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} * {}", other_expr, self.name), None))
+    }
+
     pub fn __truediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
         let other_expr = extract_expr(other)?;
         Ok(PyMut::new(format!("{} / {}", self.name, other_expr), None))
+    }
+
+    pub fn __rtruediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(format!("{} / {}", other_expr, self.name), None))
     }
 }
 
@@ -550,6 +571,62 @@ impl PyMut {
         let other_expr = extract_expr(other)?;
         Ok(PyMut::new(
             format!("({}) + {}", self.string_expr, other_expr),
+            None,
+        ))
+    }
+
+    pub fn __radd__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("{} + ({})", other_expr, self.string_expr),
+            None,
+        ))
+    }
+
+    pub fn __sub__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("({}) - {}", self.string_expr, other_expr),
+            None,
+        ))
+    }
+
+    pub fn __rsub__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("{} - ({})", other_expr, self.string_expr),
+            None,
+        ))
+    }
+
+    pub fn __mul__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("({}) * {}", self.string_expr, other_expr),
+            None,
+        ))
+    }
+
+    pub fn __rmul__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("{} * ({})", other_expr, self.string_expr),
+            None,
+        ))
+    }
+
+    pub fn __truediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("({}) / {}", self.string_expr, other_expr),
+            None,
+        ))
+    }
+
+    pub fn __rtruediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<PyMut> {
+        let other_expr = extract_expr(other)?;
+        Ok(PyMut::new(
+            format!("{} / ({})", other_expr, self.string_expr),
             None,
         ))
     }
