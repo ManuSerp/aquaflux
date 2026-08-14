@@ -309,7 +309,7 @@ impl From<Operand> for Expr {
 
 pub struct MutExpr {
     //TODO I dont know if this ever happens in data pipelines but a more correct way would be to recursively have lv and rv as MutExpr (would be the case in compilers)
-    pub column: String,
+    pub lv_operand: Operand,
     pub operator: MutOperator,
     pub rv_operand: Operand,
 }
@@ -331,8 +331,8 @@ impl LazyExecutable for WithColumnsOp {
             .map(|mutation| {
                 let right_expr: Expr = mutation.expr.rv_operand.clone().into();
 
-                let base_expr = col(&mutation.expr.column);
-                let expr = mutation.expr.operator.to_expr(base_expr, right_expr);
+                let left_expr: Expr = mutation.expr.lv_operand.clone().into();
+                let expr = mutation.expr.operator.to_expr(left_expr, right_expr);
 
                 if let Some(alias) = &mutation.alias {
                     expr.alias(alias)

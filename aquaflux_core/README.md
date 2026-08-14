@@ -75,9 +75,6 @@ print(result)
 
 ## High Priority Bugs
 
-1. **Literal on left operand not supported**
-   - `(Col("amount") * (1 - Col("discount"))).alias("discounted_value")` doesn't work
-   - We need to accept literal in left operand, not expect only columns
 
 
 ### 🚧 Planned Operations

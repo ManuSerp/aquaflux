@@ -116,6 +116,7 @@ print(test_data_mut)
 with_cols_op = WithColumns([
     (Col("a") + Col("b")).alias("sum_ab"),
     (Col("a") * 2).alias("a_doubled"),
+    (1 - Col("a")).alias("testlefneg"),
 ])
 
 pipeline_mut = aquaflux.compile_pipeline([with_cols_op])

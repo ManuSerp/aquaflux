@@ -27,8 +27,12 @@ pub fn string_expr_to_mut_expr(string_expr: &str) -> Result<MutExpr, String> {
         Expr::BinaryOp { op, left, right } => (op, left, right),
         _ => return Err("Expected a binary operation".to_string()),
     };
-    let Expr::Variable(column) = *left else {
-        return Err("Left side must be a column name".into());
+
+    let lv_operand: Operand = match *left {
+        Expr::Variable(var) => Operand::Column(var),
+        Expr::Literal(lit) => Operand::Scalar(ScalarValue::Int64(lit)), //TODO is that correct ? should it not suport float also ? and not sure about the scalar/literal names
+        // Also it might also be ok to accept a string on the right side and accept it not as column but a real string literal
+        _ => return Err("left side must be a column name or literal".into()),
     };
 
     let mut_op: MutOperator = op.try_into()?;
@@ -40,7 +44,7 @@ pub fn string_expr_to_mut_expr(string_expr: &str) -> Result<MutExpr, String> {
         _ => return Err("Right side must be a column name or literal".into()),
     };
     Ok(MutExpr {
-        column,
+        lv_operand,
         operator: mut_op,
         rv_operand,
     })
