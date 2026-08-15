@@ -59,6 +59,20 @@ result = pipeline.execute(data)
 - ** Type-safe**: Rust's type system catches errors at compile time
 - ** Extensible**: Easy to add custom operations
 
+### Pipelines as transparent, inspectable objects
+
+Aquaflux is designed to do more than run a sequence of transformations. A pipeline provides a concrete representation of the complete data-processing flow: its ordered steps, how they are configured, and how data moves from input to output. This makes pipelines easier to understand, review, reproduce, and validate.
+
+Planned introspection capabilities will make that representation available programmatically. Users will be able to retrieve the steps in a pipeline and inspect useful pipeline or step metadata, such as operation configuration, affected columns, schemas, and execution information where available.
+
+Aquaflux also plans to provide opt-in execution tools for validation and troubleshooting:
+
+- **Result comparison**: compare outputs across pipeline implementations, configurations, or runs.
+- **Step-by-step debug mode**: inspect intermediate results after each logical step to pinpoint where two executions diverge.
+- **Rich metadata**: use pipeline and step information to power diagnostics, reporting, visualization, and future tooling.
+
+These capabilities are part of the project direction and are not all available yet. See [MAN-18](https://linear.app/manuserp/issue/MAN-18/add-pipeline-introspection-result-comparison-and-step-by-step-debug) for the proposed design and progress.
+
 ## ⚡ Performance
 
 Aquaflux outperforms both Pandas and Polars (called from Python) by compiling pipelines into optimized Rust code with lazy evaluation.
