@@ -61,17 +61,17 @@ result = pipeline.execute(data)
 
 ### Pipelines as transparent, inspectable objects
 
-Aquaflux is designed to do more than run a sequence of transformations. A pipeline provides a concrete representation of the complete data-processing flow: its ordered steps, how they are configured, and how data moves from input to output. This makes pipelines easier to understand, review, reproduce, and validate.
+Aquaflux is designed to do more than run a flat sequence of low-level transformations. A pipeline should provide a concrete, hierarchical representation of the complete data-processing flow: named transformers composed of operations or nested transformers, their configuration and metadata, and how data moves from input to output. This raises the representation from engine instructions such as select, with-columns, and drop to the domain-level transformers users actually reason about.
 
-Planned introspection capabilities will make that representation available programmatically. Users will be able to retrieve the steps in a pipeline and inspect useful pipeline or step metadata, such as operation configuration, affected columns, schemas, and execution information where available.
+The compiler will be able to lower this hierarchy into an optimized executable plan while preserving the logical transformer boundaries for tooling. Planned metadata will let users name pipelines and transformers, attach descriptions or tags, retrieve their steps, and inspect useful information such as affected columns, schemas, stable paths, and execution details.
 
 Aquaflux also plans to provide opt-in execution tools for validation and troubleshooting:
 
 - **Result comparison**: compare outputs across pipeline implementations, configurations, or runs.
-- **Step-by-step debug mode**: inspect intermediate results after each logical step to pinpoint where two executions diverge.
-- **Rich metadata**: use pipeline and step information to power diagnostics, reporting, visualization, and future tooling.
+- **Hierarchical debug mode**: inspect results first at named pipeline or transformer boundaries, then drill down into a selected transformer instruction by instruction.
+- **Rich metadata**: use pipeline and transformer identity, structure, and step information to power diagnostics, profiling, reporting, visualization, and future tooling.
 
-These capabilities are part of the project direction and are not all available yet. See [MAN-18](https://linear.app/manuserp/issue/MAN-18/add-pipeline-introspection-result-comparison-and-step-by-step-debug) for the proposed design and progress.
+These capabilities are part of the project direction and are not all available yet. See [MAN-18](https://linear.app/manuserp/issue/MAN-18/add-pipeline-introspection-result-comparison-and-step-by-step-debug) for observability and [MAN-19](https://linear.app/manuserp/issue/MAN-19/support-hierarchical-pipelines-of-named-composite-transformers) for hierarchical transformer pipelines.
 
 ## ⚡ Performance
 
