@@ -18,8 +18,11 @@ pub fn parse(expr: &str) -> Result<Expr, String> {
 
 //TODO can surely be imrpved as right now any non integer string is treated as a variable, and what about float ?
 fn parse_atom(token: &str) -> Result<Expr, String> {
-    match token.parse::<i64>() {
-        Ok(n) => Ok(Expr::Literal(n)),
-        Err(_) => Ok(Expr::Variable(token.to_string())),
+    if let Ok(n) = token.parse::<i64>() {
+        Ok(Expr::Literal(n))
+    } else if let Ok(n) = token.parse::<f64>() {
+        Ok(Expr::FloatLiteral(n))
+    } else {
+        Ok(Expr::Variable(token.to_string()))
     }
 }

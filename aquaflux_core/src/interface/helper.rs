@@ -31,8 +31,9 @@ pub fn string_expr_to_mut_expr(string_expr: &str) -> Result<MutExpr, String> {
     let lv_operand: Operand = match *left {
         Expr::Variable(var) => Operand::Column(var),
         Expr::Literal(lit) => Operand::Scalar(ScalarValue::Int64(lit)), //TODO is that correct ? should it not suport float also ? and not sure about the scalar/literal names
+        Expr::FloatLiteral(lit) => Operand::Scalar(ScalarValue::Float64(lit)),
         // Also it might also be ok to accept a string on the right side and accept it not as column but a real string literal
-        _ => return Err("left side must be a column name or literal".into()),
+        _ => return Err("left side must be a column name or literal or literal float".into()),
     };
 
     let mut_op: MutOperator = op.try_into()?;
@@ -40,8 +41,9 @@ pub fn string_expr_to_mut_expr(string_expr: &str) -> Result<MutExpr, String> {
     let rv_operand: Operand = match *right {
         Expr::Variable(var) => Operand::Column(var),
         Expr::Literal(lit) => Operand::Scalar(ScalarValue::Int64(lit)), //TODO is that correct ? should it not suport float also ? and not sure about the scalar/literal names
+        Expr::FloatLiteral(lit) => Operand::Scalar(ScalarValue::Float64(lit)),
         // Also it might also be ok to accept a string on the right side and accept it not as column but a real string literal
-        _ => return Err("Right side must be a column name or literal".into()),
+        _ => return Err("Right side must be a column name or literal or float".into()),
     };
     Ok(MutExpr {
         lv_operand,
