@@ -59,6 +59,20 @@ result = pipeline.execute(data)
 - ** Type-safe**: Rust's type system catches errors at compile time
 - ** Extensible**: Easy to add custom operations
 
+### Pipelines as transparent, inspectable objects
+
+Aquaflux is designed to do more than run a flat sequence of low-level transformations. A pipeline should provide a concrete, hierarchical representation of the complete data-processing flow: named transformers composed of operations or nested transformers, their configuration and metadata, and how data moves from input to output. This raises the representation from engine instructions such as select, with-columns, and drop to the domain-level transformers users actually reason about.
+
+The compiler will be able to lower this hierarchy into an optimized executable plan while preserving the logical transformer boundaries for tooling. Planned metadata will let users name pipelines and transformers, attach descriptions or tags, retrieve their steps, and inspect useful information such as affected columns, schemas, stable paths, and execution details.
+
+Aquaflux also plans to provide opt-in execution tools for validation and troubleshooting:
+
+- **Result comparison**: compare outputs across pipeline implementations, configurations, or runs.
+- **Hierarchical debug mode**: inspect results first at named pipeline or transformer boundaries, then drill down into a selected transformer instruction by instruction.
+- **Rich metadata**: use pipeline and transformer identity, structure, and step information to power diagnostics, profiling, reporting, visualization, and future tooling.
+
+These capabilities are part of the project direction and are not all available yet. See [MAN-18](https://linear.app/manuserp/issue/MAN-18/add-pipeline-introspection-result-comparison-and-step-by-step-debug) for observability and [MAN-19](https://linear.app/manuserp/issue/MAN-19/support-hierarchical-pipelines-of-named-composite-transformers) for hierarchical transformer pipelines.
+
 ## ⚡ Performance
 
 Aquaflux outperforms both Pandas and Polars (called from Python) by compiling pipelines into optimized Rust code with lazy evaluation.
