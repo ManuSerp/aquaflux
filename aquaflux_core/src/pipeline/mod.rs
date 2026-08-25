@@ -1,7 +1,7 @@
 pub mod dataframe;
-use polars::prelude::*;
-
 pub use polars::prelude::IntoLazy;
+use polars::prelude::LazyFrame;
+use polars::prelude::*;
 
 /// Trait for operations that work on LazyFrames
 pub trait LazyExecutable {
@@ -20,6 +20,7 @@ pub enum Op {
     FilterCol(FilterColOp),
     GroupBy(GroupByOp),
     WithColumns(WithColumnsOp),
+    Join(JoinOp),
 }
 
 impl LazyExecutable for Op {
@@ -35,6 +36,7 @@ impl LazyExecutable for Op {
             Op::FilterCol(op) => op.execute_lazy(lf),
             Op::GroupBy(op) => op.execute_lazy(lf),
             Op::WithColumns(op) => op.execute_lazy(lf),
+            Op::Join(op) => op.execute_lazy(lf),
         }
     }
 }
@@ -343,5 +345,33 @@ impl LazyExecutable for WithColumnsOp {
             .collect();
 
         Ok(lf.with_columns(mut_exp))
+    }
+}
+
+pub struct JoinOp {
+    pub other: LazyFrame,
+    pub left_on: Vec<String>,
+    pub right_on: Vec<String>,
+    pub how: polars::prelude::JoinType,
+}
+
+impl LazyExecutable for JoinOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+        let left_on_exp = self
+            .left_on
+            .iter()
+            .map(|name| col(name))
+            .collect::<Vec<Expr>>();
+        let right_on_exp = self
+            .right_on
+            .iter()
+            .map(|name| col(name))
+            .collect::<Vec<Expr>>();
+        Ok(lf.join(
+            self.other.clone(),
+            left_on_exp,
+            right_on_exp,
+            self.how.clone().into(),
+        ))
     }
 }
