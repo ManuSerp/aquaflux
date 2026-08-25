@@ -42,6 +42,7 @@ define_operations! {
     PyFilterColOp => FilterCol,
     PyGroupByOp => GroupBy,
     PyWithColumns => WithColumns,
+    PyJoinOp => Join,
 }
 
 #[pyclass(name = "SelectOp", from_py_object)]
@@ -667,6 +668,43 @@ impl From<PyWithColumns> for pipeline::WithColumnsOp {
     fn from(py_op: PyWithColumns) -> Self {
         pipeline::WithColumnsOp {
             mutations: py_op.mutations.into_iter().map(|m| m.into()).collect(),
+        }
+    }
+}
+
+#[pyclass(name = "JoinOp", from_py_object)]
+#[derive(Clone)]
+pub struct PyJoinOp {
+    #[pyo3(get, set)]
+    pub left_on: Vec<String>,
+    #[pyo3(get, set)]
+    pub right_on: Vec<String>,
+    #[pyo3(get, set)]
+    pub other: frame,
+    #[pyo3(get, set)]
+    pub how: String, // "inner", "left", "right", "outer"
+}
+
+#[pymethods]
+impl PyJoinOp {
+    #[new]
+    pub fn new(left_on: Vec<String>, right_on: Vec<String>, other: frame, how: String) -> Self {
+        PyJoinOp {
+            left_on,
+            right_on,
+            other,
+            how,
+        }
+    }
+}
+
+impl From<PyJoinOp> for pipeline::JoinOp {
+    fn from(py_op: PyJoinOp) -> Self {
+        pipeline::JoinOp {
+            left_on: py_op.left_on,
+            right_on: py_op.right_on,
+            other: py_op.other,
+            how: py_op.how,
         }
     }
 }
