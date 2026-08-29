@@ -125,3 +125,53 @@ result_mut = pipeline_mut.execute(test_data_mut)
 
 print("\nWithColumns Result:")
 print(result_mut)
+
+# Test JoinOp
+print("\n--- JoinOp Test ---")
+
+# Create left DataFrame (orders)
+orders_df = pandas.DataFrame({
+    "order_id": [1, 2, 3, 4],
+    "customer_id": [101, 102, 101, 103],
+    "amount": [250.0, 150.0, 300.0, 450.0],
+})
+
+# Create right DataFrame (customers)
+customers_df = pandas.DataFrame({
+    "id": [101, 102, 104],
+    "name": ["Alice", "Bob", "Diana"],
+    "region": ["North", "South", "East"],
+})
+
+print("Orders DataFrame (left):")
+print(orders_df)
+print("\nCustomers DataFrame (right):")
+print(customers_df)
+
+# Inner join: only matching rows
+join_inner_op = aquaflux.JoinOp(
+    left_on=["customer_id"],
+    right_on=["id"],
+    other=customers_df,
+    how="inner"
+)
+
+pipeline_join_inner = aquaflux.compile_pipeline([join_inner_op])
+result_join_inner = pipeline_join_inner.execute(orders_df)
+
+print("\nInner Join Result (orders with matching customers):")
+print(result_join_inner)
+
+# Left join: all orders, with customer info where available
+join_left_op = aquaflux.JoinOp(
+    left_on=["customer_id"],
+    right_on=["id"],
+    other=customers_df,
+    how="left"
+)
+
+pipeline_join_left = aquaflux.compile_pipeline([join_left_op])
+result_join_left = pipeline_join_left.execute(orders_df)
+
+print("\nLeft Join Result (all orders, customers where available):")
+print(result_join_left)

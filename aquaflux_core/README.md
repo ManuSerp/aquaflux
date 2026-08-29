@@ -102,6 +102,7 @@ print(result)
 **Data Combination:**
   WIP
 - `JoinOp` - Merge datasets (left, inner, outer joins)
+- TODO: It is working right now but the issue is that it expect the other dataframe as part of the op so it currently not be possible to use the data frame of one of the previous pipeline operation, it would be nice to have a way to save a lazy df as a temporaty step so it can be picked up at a later time from the pipeline without crossing the python boundary again
 - `SortOp` - Sort by columns
 
 ## 🏗️ Architecture
