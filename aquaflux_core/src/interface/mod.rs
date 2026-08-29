@@ -1,6 +1,7 @@
 pub mod helper;
 use crate::interface::helper::extract_expr;
 use crate::pipeline;
+use polars::prelude::{IntoLazy, JoinType};
 use pyo3::prelude::*;
 
 /// Python-facing operation types
@@ -496,7 +497,7 @@ impl From<PyGroupByOp> for pipeline::GroupByOp {
     }
 }
 
-#[pyclass(name = "Col")]
+#[pyclass(name = "Col", from_py_object)]
 #[derive(Clone)]
 pub struct PyCol {
     pub name: String,
@@ -680,7 +681,7 @@ pub struct PyJoinOp {
     #[pyo3(get, set)]
     pub right_on: Vec<String>,
     #[pyo3(get, set)]
-    pub other: frame,
+    pub other: Py<PyAny>, // python dataframe, TODO: neeed a way to accept already lazy dataframe from previous step
     #[pyo3(get, set)]
     pub how: String, // "inner", "left", "right", "outer"
 }
@@ -688,7 +689,7 @@ pub struct PyJoinOp {
 #[pymethods]
 impl PyJoinOp {
     #[new]
-    pub fn new(left_on: Vec<String>, right_on: Vec<String>, other: frame, how: String) -> Self {
+    pub fn new(left_on: Vec<String>, right_on: Vec<String>, other: Py<PyAny>, how: String) -> Self {
         PyJoinOp {
             left_on,
             right_on,
@@ -700,11 +701,44 @@ impl PyJoinOp {
 
 impl From<PyJoinOp> for pipeline::JoinOp {
     fn from(py_op: PyJoinOp) -> Self {
-        pipeline::JoinOp {
-            left_on: py_op.left_on,
-            right_on: py_op.right_on,
-            other: py_op.other,
-            how: py_op.how,
-        }
+        // Acquire the GIL to convert the DataFrame
+        // this should never panic (bold as it is) because we are in the interface contect which should always run in the python context
+        Python::attach(|py| {
+            py_op
+                .into_join_op(py)
+                .expect("Failed to convert PyJoinOp to JoinOp")
+        })
+    }
+}
+
+impl PyJoinOp {
+    /// Convert to the internal JoinOp, requires the GIL to convert the DataFrame
+    pub fn into_join_op(self, py: Python<'_>) -> PyResult<pipeline::JoinOp> {
+        // Bind the Py<PyAny> to the current GIL lifetime
+        let bound_other = self.other.bind(py);
+        // Convert Python DataFrame to Rust Polars DataFrame
+        let df = crate::pipeline::dataframe::from_python(bound_other)?;
+
+        // Convert string to JoinType
+        let join_type = match self.how.to_lowercase().as_str() {
+            "inner" => JoinType::Inner,
+            "left" => JoinType::Left,
+            "right" => JoinType::Right,
+            "outer" | "full" => JoinType::Full,
+            "cross" => JoinType::Cross,
+            _ => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Unknown join type: '{}'. Expected one of: inner, left, right, outer, full, cross",
+                    self.how
+                )));
+            }
+        };
+
+        Ok(pipeline::JoinOp {
+            left_on: self.left_on,
+            right_on: self.right_on,
+            other: df.lazy(), // Here we convert dataframe to lazy but we should be able to support already lazy and not lazy
+            how: join_type,
+        })
     }
 }

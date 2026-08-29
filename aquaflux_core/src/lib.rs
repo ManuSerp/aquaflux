@@ -3,6 +3,7 @@ pub mod interface;
 pub mod pipeline;
 use crate::pipeline::{IntoLazy, LazyExecutable};
 use pyo3::prelude::*;
+
 #[pymodule]
 fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register the compile_pipeline function
