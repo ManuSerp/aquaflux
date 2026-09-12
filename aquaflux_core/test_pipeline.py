@@ -175,3 +175,37 @@ result_join_left = pipeline_join_left.execute(orders_df)
 
 print("\nLeft Join Result (all orders, customers where available):")
 print(result_join_left)
+
+# Test SortOp with both pandas and polars inputs (output is always polars).
+print("\n--- SortOp Test ---")
+
+sort_data = {
+    "category": ["B", "A", "B", "A"],
+    "amount": [20, 30, 10, 20],
+    "order_id": [1, 2, 3, 4],
+}
+
+for dataframe_type in (pandas.DataFrame, polars.DataFrame):
+    test_data_sort = dataframe_type(sort_data)
+    for descending in (False, True):
+        pipeline_sort = aquaflux.compile_pipeline([
+            aquaflux.SortOp(["order_id"], descending=descending),
+        ])
+        result_sort = pipeline_sort.execute(test_data_sort)
+        assert isinstance(result_sort, polars.DataFrame)
+        expected_ids = [4, 3, 2, 1] if descending else [1, 2, 3, 4]
+        assert result_sort["order_id"].to_list() == expected_ids
+
+        # Repeated categories exercise the secondary key in both directions.
+        pipeline_sort_multi = aquaflux.compile_pipeline([
+            aquaflux.SortOp(["category", "amount"], descending=descending),
+        ])
+        result_sort_multi = pipeline_sort_multi.execute(test_data_sort)
+        assert isinstance(result_sort_multi, polars.DataFrame)
+        expected_rows = [("A", 20, 4), ("A", 30, 2), ("B", 10, 3), ("B", 20, 1)]
+        if descending:
+            expected_rows.reverse()
+        assert result_sort_multi.rows() == expected_rows
+
+        print(f"\nSort Result ({dataframe_type.__module__}, descending={descending}):")
+        print(result_sort_multi)

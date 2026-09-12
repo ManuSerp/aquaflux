@@ -20,7 +20,7 @@ macro_rules! define_operations {
         pub fn extract_operation(op: &Bound<'_, PyAny>) -> PyResult<pipeline::Op> {
             $(
                 if let Ok(extracted) = op.extract::<$py_type>() {
-                    return Ok(pipeline::Op::$variant(extracted.into()));
+                    return Ok(pipeline::Op::$variant(extracted.try_into()?));
                 }
             )*
             Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
@@ -44,6 +44,7 @@ define_operations! {
     PyGroupByOp => GroupBy,
     PyWithColumns => WithColumns,
     PyJoinOp => Join,
+    PySortOp => Sort,
 }
 
 #[pyclass(name = "SelectOp", from_py_object)]
@@ -699,15 +700,13 @@ impl PyJoinOp {
     }
 }
 
-impl From<PyJoinOp> for pipeline::JoinOp {
-    fn from(py_op: PyJoinOp) -> Self {
-        // Acquire the GIL to convert the DataFrame
-        // this should never panic (bold as it is) because we are in the interface contect which should always run in the python context
-        Python::attach(|py| {
-            py_op
-                .into_join_op(py)
-                .expect("Failed to convert PyJoinOp to JoinOp")
-        })
+impl TryFrom<PyJoinOp> for pipeline::JoinOp {
+    // Acquire the GIL to convert the DataFrame
+    // this should never panic (bold as it is) because we are in the interface context which should always run in the python context
+    type Error = PyErr;
+
+    fn try_from(py_op: PyJoinOp) -> PyResult<Self> {
+        Python::attach(|py| py_op.into_join_op(py))
     }
 }
 
@@ -740,5 +739,34 @@ impl PyJoinOp {
             other: df.lazy(), // Here we convert dataframe to lazy but we should be able to support already lazy and not lazy
             how: join_type,
         })
+    }
+}
+
+#[pyclass(name = "SortOp", from_py_object)]
+#[derive(Clone)]
+pub struct PySortOp {
+    #[pyo3(get, set)]
+    pub columns: Vec<String>,
+    #[pyo3(get, set)]
+    pub descending: bool, // Maybe a vec in the future for columns with different sort orders
+}
+
+#[pymethods]
+impl PySortOp {
+    #[new]
+    pub fn new(columns: Vec<String>, descending: bool) -> Self {
+        PySortOp {
+            columns,
+            descending,
+        }
+    }
+}
+
+impl From<PySortOp> for pipeline::SortOp {
+    fn from(py_op: PySortOp) -> Self {
+        pipeline::SortOp {
+            columns: py_op.columns,
+            descending: py_op.descending,
+        }
     }
 }

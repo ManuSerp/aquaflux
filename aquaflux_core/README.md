@@ -68,10 +68,37 @@ print(result)
 | `RenameOp` | Rename columns | `RenameOp(["old"], ["new"])` |
 | `DropOp` | Drop specific columns | `DropOp(["col1", "col2"])` |
 | `DropNaOp` | Drop rows with any null values | `DropNaOp()` |
+| `SortOp` | Sort by one or more columns | `SortOp(["category", "amount"], descending=False)` |
 | `FilterOp` | Filter rows by comparing column to value | `FilterOp("amount", LogicalOp.Gt, 100)` |
 | `FilterColOp` | Filter rows by comparing two columns | `FilterColOp("amount", LogicalOp.Gt, "threshold")` |
 | `GroupByOp` | Group by columns and aggregate | `GroupByOp(["customer"], [('sale',AggOp.Sum,'sales_sum')])` |
 | `WithColumnOp` | Create new columns from expressions | `WithColumns([(Col("a") + Col("b")).alias("sum_ab"),(Col("a") * 2).alias("a_doubled"),])` |
+
+### Sorting
+
+`SortOp(columns, descending)` sorts by the listed columns in priority order,
+using later columns to break ties. The `descending` boolean is required:
+`False` sorts ascending and `True` sorts descending for **all** listed columns.
+Mixed per-column directions are not supported. Both Pandas and Polars inputs
+are accepted; `execute` returns a Polars DataFrame in either case.
+
+```python
+import aquaflux_core as aquaflux
+import polars as pl
+
+data = pl.DataFrame({
+    "category": ["B", "A", "A"],
+    "amount": [10, 30, 20],
+})
+for descending in (False, True):
+    pipeline = aquaflux.compile_pipeline([
+        aquaflux.SortOp(["category", "amount"], descending=descending),
+    ])
+    result = pipeline.execute(data)
+    expected = [("A", 20), ("A", 30), ("B", 10)]
+    assert result.rows() == (expected[::-1] if descending else expected)
+    print(result)
+```
 
 ## High Priority Bugs
 
@@ -103,7 +130,7 @@ print(result)
   WIP
 - `JoinOp` - Merge datasets (left, inner, outer joins)
 - TODO: It is working right now but the issue is that it expect the other dataframe as part of the op so it currently not be possible to use the data frame of one of the previous pipeline operation, it would be nice to have a way to save a lazy df as a temporaty step so it can be picked up at a later time from the pipeline without crossing the python boundary again
-- `SortOp` - Sort by columns
+
 
 ## 🏗️ Architecture
 

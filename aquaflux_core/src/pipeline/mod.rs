@@ -1,8 +1,8 @@
 pub mod dataframe;
 pub use polars::prelude::IntoLazy;
 use polars::prelude::LazyFrame;
+use polars::prelude::SortMultipleOptions;
 use polars::prelude::*;
-
 /// Trait for operations that work on LazyFrames
 pub trait LazyExecutable {
     fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String>;
@@ -21,6 +21,7 @@ pub enum Op {
     GroupBy(GroupByOp),
     WithColumns(WithColumnsOp),
     Join(JoinOp),
+    Sort(SortOp),
 }
 
 impl LazyExecutable for Op {
@@ -37,6 +38,7 @@ impl LazyExecutable for Op {
             Op::GroupBy(op) => op.execute_lazy(lf),
             Op::WithColumns(op) => op.execute_lazy(lf),
             Op::Join(op) => op.execute_lazy(lf),
+            Op::Sort(op) => op.execute_lazy(lf),
         }
     }
 }
@@ -372,6 +374,22 @@ impl LazyExecutable for JoinOp {
             left_on_exp,
             right_on_exp,
             self.how.clone().into(),
+        ))
+    }
+}
+
+pub struct SortOp {
+    pub columns: Vec<String>,
+    pub descending: bool,
+}
+
+impl LazyExecutable for SortOp {
+    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+        let sort_exprs: Vec<Expr> = self.columns.iter().map(|col_name| col(col_name)).collect();
+
+        Ok(lf.sort_by_exprs(
+            sort_exprs,
+            SortMultipleOptions::default().with_order_descending(self.descending), // Maybe we want to be column specific in the future, but for now we will just use the same order for all columns
         ))
     }
 }
