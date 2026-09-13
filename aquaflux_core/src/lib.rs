@@ -78,10 +78,13 @@ impl CompiledSection {
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
         }
 
-        // Collect only once at the end
-        let result = lf.collect().map_err(|e: polars::prelude::PolarsError| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-        })?;
+        // Workers may need the GIL to release Python-owned input buffers.
+        // Detach while collecting so those callbacks cannot deadlock
+        let result =
+            py.detach(move || lf.collect())
+                .map_err(|e: polars::prelude::PolarsError| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
+                })?;
 
         pipeline::dataframe::to_python(py, result)
     }
