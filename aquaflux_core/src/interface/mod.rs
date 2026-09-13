@@ -1,4 +1,5 @@
 pub mod helper;
+pub mod section;
 use crate::interface::helper::extract_expr;
 use crate::pipeline;
 use polars::prelude::{IntoLazy, JoinType};
@@ -28,7 +29,22 @@ macro_rules! define_operations {
                 op.get_type().name()?
             )))
         }
+        /// Return the registered Python class for an operation instance.
+        pub fn extract_operation_type<'py>(
+            op: &Bound<'py, PyAny>,
+        ) -> PyResult<Bound<'py, pyo3::types::PyType>> {
+            $(
+                if op.is_instance_of::<$py_type>() {
+                    return Ok(op.py().get_type::<$py_type>());
+                }
+            )*
+            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+                "Unknown operation type: {}",
+                op.get_type().name()?
+            )))
+        }
     };
+
 }
 
 // here again to we need to use the enum for the op or could we just directly refer to the op itself driectly.

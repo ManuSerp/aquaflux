@@ -1,4 +1,5 @@
 pub mod compiler;
+pub mod graph;
 pub mod interface;
 pub mod pipeline;
 use crate::pipeline::{IntoLazy, LazyExecutable};
@@ -21,18 +22,36 @@ fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<interface::PyAggregationFunc>()?;
     m.add_class::<interface::PyMut>()?;
     m.add_class::<interface::PyCol>()?;
-    m.add_class::<CompiledPipeline>()?;
+    m.add_class::<CompiledSection>()?;
 
     Ok(())
 }
 
+// # Illustrative API only
+// Section(
+//     name="join_orders_customers",
+//     input=ref("orders_clean"), # ref name that the provided dataframe will be bound to
+//     operations=[
+//         JoinOp(
+//             other=ref("customers_clean"),
+//             left_on=["customer_id"],
+//             right_on=["id"],
+//             how="left",
+//         )
+//     ],
+//     output=ref("enriched_orders"), ref name that the output dataframe will be bound to
+// )
+
 #[pyclass]
-pub struct CompiledPipeline {
+pub struct CompiledSection {
     pub instructions: Vec<pipeline::Op>,
+    pub name: Option<String>,
+    pub input_ref: Option<String>,
+    pub output_ref: Option<String>,
 }
 
 #[pymethods]
-impl CompiledPipeline {
+impl CompiledSection {
     pub fn __repr__(&self) -> String {
         format!("CompiledPipeline({} operations)", self.instructions.len())
     }
@@ -64,12 +83,17 @@ impl CompiledPipeline {
 }
 
 #[pyfunction]
-pub fn compile_pipeline(_py: Python, ops: Vec<Bound<'_, PyAny>>) -> PyResult<CompiledPipeline> {
+pub fn compile_pipeline(_py: Python, ops: Vec<Bound<'_, PyAny>>) -> PyResult<CompiledSection> {
     let mut instructions = Vec::new();
 
     for op in ops {
         instructions.push(interface::extract_operation(&op)?);
     }
 
-    Ok(CompiledPipeline { instructions })
+    Ok(CompiledSection {
+        instructions,
+        name: None,
+        input_ref: None,
+        output_ref: None,
+    })
 }
