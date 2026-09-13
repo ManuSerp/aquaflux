@@ -141,7 +141,7 @@ A possible compilation sequence is:
 3. Classify references with no internal producer as required external inputs, subject to explicit input-declaration rules.
 4. Validate requested output references.
 5. Add an edge from each producing section to each consuming section.
-6. detect cycles and compute a topological section order;
+6. Detect cycles and compute a topological section order;
 7. prune sections that are not needed for the requested outputs, if partial execution is supported;
 8. produce a compiled input/output contract and an inspectable logical graph;
 9. lower each required section to Polars lazy plans during execution.
