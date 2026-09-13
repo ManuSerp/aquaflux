@@ -1,4 +1,5 @@
 pub mod compiler;
+pub mod graph;
 pub mod interface;
 pub mod pipeline;
 use crate::pipeline::{IntoLazy, LazyExecutable};
@@ -21,20 +22,43 @@ fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<interface::PyAggregationFunc>()?;
     m.add_class::<interface::PyMut>()?;
     m.add_class::<interface::PyCol>()?;
-    m.add_class::<CompiledPipeline>()?;
+    m.add_class::<interface::section::PySection>()?;
+    m.add_class::<CompiledSection>()?;
 
     Ok(())
 }
 
+// # Illustrative API only
+// Section(
+//     name="join_orders_customers",
+//     input=ref("orders_clean"), # ref name that the provided dataframe will be bound to
+//     operations=[
+//         JoinOp(
+//             other=ref("customers_clean"),
+//             left_on=["customer_id"],
+//             right_on=["id"],
+//             how="left",
+//         )
+//     ],
+//     output=ref("enriched_orders"), ref name that the output dataframe will be bound to
+// )
+
 #[pyclass]
-pub struct CompiledPipeline {
+pub struct CompiledSection {
     pub instructions: Vec<pipeline::Op>,
+    pub name: Option<String>,
+    pub input_ref: Option<String>,
+    pub output_ref: Option<String>,
 }
 
 #[pymethods]
-impl CompiledPipeline {
+impl CompiledSection {
     pub fn __repr__(&self) -> String {
-        format!("CompiledPipeline({} operations)", self.instructions.len())
+        format!(
+            "CompiledPipeline[{}]({} operations)",
+            self.name.as_deref().unwrap_or("unnamed"),
+            self.instructions.len()
+        )
     }
 
     pub fn execute<'py>(
@@ -54,22 +78,30 @@ impl CompiledPipeline {
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
         }
 
-        // Collect only once at the end
-        let result = lf.collect().map_err(|e: polars::prelude::PolarsError| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-        })?;
+        // Workers may need the GIL to release Python-owned input buffers.
+        // Detach while collecting so those callbacks cannot deadlock
+        let result =
+            py.detach(move || lf.collect())
+                .map_err(|e: polars::prelude::PolarsError| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
+                })?;
 
         pipeline::dataframe::to_python(py, result)
     }
 }
 
 #[pyfunction]
-pub fn compile_pipeline(_py: Python, ops: Vec<Bound<'_, PyAny>>) -> PyResult<CompiledPipeline> {
+pub fn compile_pipeline(_py: Python, ops: Vec<Bound<'_, PyAny>>) -> PyResult<CompiledSection> {
     let mut instructions = Vec::new();
 
     for op in ops {
         instructions.push(interface::extract_operation(&op)?);
     }
 
-    Ok(CompiledPipeline { instructions })
+    Ok(CompiledSection {
+        instructions,
+        name: None,
+        input_ref: None,
+        output_ref: None,
+    })
 }

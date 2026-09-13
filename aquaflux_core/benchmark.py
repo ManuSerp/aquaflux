@@ -111,16 +111,16 @@ def bench_basic_pipeline_polars(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def create_basic_pipeline_aquaflux() -> aquaflux.CompiledPipeline:
-    """Aquaflux implementation of basic pipeline."""
-    return aquaflux.compile_pipeline([
+def create_basic_pipeline_aquaflux() -> aquaflux.CompiledSection:
+    """Compile the basic pipeline as an Aquaflux Section."""
+    return aquaflux.Section([
         aquaflux.SelectOp(["customer", "order_id", "amount", "category"]),
         aquaflux.FillNaOp(["customer"], "Unknown"),
         aquaflux.CastOp(["amount"], float),
         aquaflux.FilterOp("amount", aquaflux.LogicalOp.Gt, 200.0),
         aquaflux.RenameOp(["customer"], ["customer_name"]),
         aquaflux.DropNaOp(),
-    ])
+    ]).compile()
 
 
 # =============================================================================
@@ -145,9 +145,9 @@ def bench_groupby_polars(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def create_groupby_pipeline_aquaflux() -> aquaflux.CompiledPipeline:
-    """Aquaflux implementation of groupby."""
-    return aquaflux.compile_pipeline([
+def create_groupby_pipeline_aquaflux() -> aquaflux.CompiledSection:
+    """Compile groupby as an Aquaflux Section."""
+    return aquaflux.Section([
         aquaflux.GroupByOp(
             group_columns=["category"],
             aggregations=[
@@ -156,7 +156,7 @@ def create_groupby_pipeline_aquaflux() -> aquaflux.CompiledPipeline:
                 ("order_id", aquaflux.AggOp.Count, "order_count"),
             ],
         )
-    ])
+    ]).compile()
 
 
 # =============================================================================
@@ -181,15 +181,15 @@ def bench_with_columns_polars(df: pl.DataFrame) -> pl.DataFrame:
     ])
 
 
-def create_with_columns_pipeline_aquaflux() -> aquaflux.CompiledPipeline:
-    """Aquaflux implementation of computed columns."""
-    return aquaflux.compile_pipeline([
+def create_with_columns_pipeline_aquaflux() -> aquaflux.CompiledSection:
+    """Compile computed columns as an Aquaflux Section."""
+    return aquaflux.Section([
         WithColumns([
             (Col("amount") * Col("quantity")).alias("total_value"),
             (Col("amount") * 2).alias("amount_doubled"),
             (Col("amount") + Col("quantity")).alias("amount_plus_qty"),
         ])
-    ])
+    ]).compile()
 
 
 # =============================================================================
@@ -229,9 +229,9 @@ def bench_complex_pipeline_polars(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def create_complex_pipeline_aquaflux() -> aquaflux.CompiledPipeline:
-    """Aquaflux implementation of complex pipeline."""
-    return aquaflux.compile_pipeline([
+def create_complex_pipeline_aquaflux() -> aquaflux.CompiledSection:
+    """Compile the complex pipeline as an Aquaflux Section."""
+    return aquaflux.Section([
         aquaflux.FillNaOp(["customer"], "Unknown"),
         aquaflux.CastOp(["amount"], float),
         aquaflux.FilterOp("amount", aquaflux.LogicalOp.Gt, 100.0),
@@ -247,7 +247,7 @@ def create_complex_pipeline_aquaflux() -> aquaflux.CompiledPipeline:
                 ("customer", aquaflux.AggOp.Count, "customer_count"),
             ],
         ),
-    ])
+    ]).compile()
 
 
 # =============================================================================
@@ -259,7 +259,7 @@ def run_benchmark(
     data_sizes: list[int],
     pandas_func: Callable[[pd.DataFrame], pd.DataFrame],
     polars_func: Callable[[pl.DataFrame], pl.DataFrame],
-    aquaflux_pipeline: aquaflux.CompiledPipeline,
+    aquaflux_pipeline: aquaflux.CompiledSection,
     prepare_pandas: Callable[[pd.DataFrame], pd.DataFrame] | None = None,
 ) -> list[BenchmarkResult]:
     """Run a benchmark across all frameworks and data sizes."""
