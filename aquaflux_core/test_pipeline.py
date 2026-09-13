@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
-"""Test script demonstrating the aquaflux pipeline compilation."""
+"""Demonstrate Section compilation and one legacy pipeline example."""
 
 import aquaflux_core as aquaflux
 import pandas
 import polars
+
+# Legacy API: kept as a compatibility example; all examples below use Section.
+print("\n--- Legacy Pipeline Test ---")
+legacy_data = pandas.DataFrame({"amount": [100, 200, 300]})
+legacy_ops = [aquaflux.FilterOp("amount", aquaflux.LogicalOp.Gt, 150)]
+legacy_pipeline = aquaflux.compile_pipeline(legacy_ops)
+legacy_result = legacy_pipeline.execute(legacy_data)
+assert isinstance(legacy_result, polars.DataFrame)
+assert legacy_result["amount"].to_list() == [200, 300]
+assert aquaflux.Section(legacy_ops).compile().execute(legacy_data).equals(legacy_result)
+print(legacy_result)
 
 # Create individual operations
 select_op = aquaflux.SelectOp(["customer", "order_id", "amount", "status"])
@@ -28,8 +39,8 @@ filter_op = aquaflux.FilterOp("amount", aquaflux.LogicalOp.Gt, 150.0)
 # Filter rows where amount > min_threshold
 filter_col_op = aquaflux.FilterColOp("amount", aquaflux.LogicalOp.Gt, "min_threshold")
 
-# Compile the pipeline
-pipeline = aquaflux.compile_pipeline(
+# Declare the operation chain as a Section, then compile it.
+section_transform = aquaflux.Section(
     [
         select_op,
         fillna_op,      # Fills nulls in 'customer' column (row 2)
@@ -41,7 +52,10 @@ pipeline = aquaflux.compile_pipeline(
     ]
 )
 
-print(f" Successfully compiled pipeline: {pipeline}")
+section_transform.name = "clean_orders"
+pipeline = section_transform.compile()
+
+print(f" Successfully compiled section: {pipeline}")
 
 test_data = pandas.DataFrame(
     {
@@ -80,7 +94,8 @@ test_data_groupby = pandas.DataFrame(
 print("\nGroupBy Test Data:")
 print(test_data_groupby)
 
-pipeline_groupby = aquaflux.compile_pipeline([groupby_op])
+section_groupby = aquaflux.Section([groupby_op])
+pipeline_groupby = section_groupby.compile()
 result_groupby = pipeline_groupby.execute(test_data_groupby)
 
 print("\nGroupBy Result:")
@@ -104,7 +119,7 @@ print(f"Col('a') - 2 -> string_expr: '{mut2.string_expr}'")
 mut3 = (Col("price") * Col("quantity")).alias("total")
 print(f"(Col('price') * Col('quantity')).alias('total') -> string_expr: '{mut3.string_expr}', alias: '{mut3.alias}'")
 
-# Test WithColumns in a pipeline
+# Test WithColumns in a Section
 test_data_mut = pandas.DataFrame({
     "a": [1, 2, 3],
     "b": [10, 20, 30],
@@ -120,7 +135,8 @@ with_cols_op = WithColumns([
     (Col("a") * 1.5).alias("testfloat"),
 ])
 
-pipeline_mut = aquaflux.compile_pipeline([with_cols_op])
+section_mut = aquaflux.Section([with_cols_op])
+pipeline_mut = section_mut.compile()
 result_mut = pipeline_mut.execute(test_data_mut)
 
 print("\nWithColumns Result:")
@@ -156,7 +172,8 @@ join_inner_op = aquaflux.JoinOp(
     how="inner"
 )
 
-pipeline_join_inner = aquaflux.compile_pipeline([join_inner_op])
+section_join_inner = aquaflux.Section([join_inner_op])
+pipeline_join_inner = section_join_inner.compile()
 result_join_inner = pipeline_join_inner.execute(orders_df)
 
 print("\nInner Join Result (orders with matching customers):")
@@ -170,7 +187,8 @@ join_left_op = aquaflux.JoinOp(
     how="left"
 )
 
-pipeline_join_left = aquaflux.compile_pipeline([join_left_op])
+section_join_left = aquaflux.Section([join_left_op])
+pipeline_join_left = section_join_left.compile()
 result_join_left = pipeline_join_left.execute(orders_df)
 
 print("\nLeft Join Result (all orders, customers where available):")
@@ -188,18 +206,20 @@ sort_data = {
 for dataframe_type in (pandas.DataFrame, polars.DataFrame):
     test_data_sort = dataframe_type(sort_data)
     for descending in (False, True):
-        pipeline_sort = aquaflux.compile_pipeline([
+        section_sort = aquaflux.Section([
             aquaflux.SortOp(["order_id"], descending=descending),
         ])
+        pipeline_sort = section_sort.compile()
         result_sort = pipeline_sort.execute(test_data_sort)
         assert isinstance(result_sort, polars.DataFrame)
         expected_ids = [4, 3, 2, 1] if descending else [1, 2, 3, 4]
         assert result_sort["order_id"].to_list() == expected_ids
 
         # Repeated categories exercise the secondary key in both directions.
-        pipeline_sort_multi = aquaflux.compile_pipeline([
+        section_sort_multi = aquaflux.Section([
             aquaflux.SortOp(["category", "amount"], descending=descending),
         ])
+        pipeline_sort_multi = section_sort_multi.compile()
         result_sort_multi = pipeline_sort_multi.execute(test_data_sort)
         assert isinstance(result_sort_multi, polars.DataFrame)
         expected_rows = [("A", 20, 4), ("A", 30, 2), ("B", 10, 3), ("B", 20, 1)]
@@ -209,3 +229,37 @@ for dataframe_type in (pandas.DataFrame, polars.DataFrame):
 
         print(f"\nSort Result ({dataframe_type.__module__}, descending={descending}):")
         print(result_sort_multi)
+
+# Declare a Section, then compile and execute it separately.
+print("\n--- Section Test ---")
+
+section_data = pandas.DataFrame({
+    "customer": ["Alice", None, "Bob"],
+    "amount": ["100.0", "200.0", "300.0"],
+    "status": ["active", "pending", "active"],
+})
+section_ops = [
+    aquaflux.SelectOp(["customer", "amount"]),
+    aquaflux.FillNaOp(["customer"], "Unknown"),
+    aquaflux.CastOp(["amount"], float),
+    aquaflux.FilterOp("amount", aquaflux.LogicalOp.Gt, 150.0),
+    aquaflux.RenameOp(["customer"], ["customer_name"]),
+    aquaflux.SortOp(["amount"], descending=True),
+]
+
+section = aquaflux.Section(section_ops)
+section.name = "high_value_customers"
+compiled_section = section.compile()
+result_section = compiled_section.execute(section_data)
+
+assert isinstance(compiled_section, aquaflux.CompiledSection)
+assert isinstance(result_section, polars.DataFrame)
+assert result_section.columns == ["customer_name", "amount"]
+assert result_section.rows() == [("Bob", 300.0), ("Unknown", 200.0)]
+
+
+# Compilation does not consume the section's stored operations.
+assert section.compile().execute(section_data).equals(result_section)
+
+print(f"\nCompiled Section ({section.name}): {compiled_section}")
+print(result_section)

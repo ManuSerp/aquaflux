@@ -29,19 +29,29 @@ macro_rules! define_operations {
                 op.get_type().name()?
             )))
         }
-        /// Return the registered Python class for an operation instance.
-        pub fn extract_operation_type<'py>(
-            op: &Bound<'py, PyAny>,
-        ) -> PyResult<Bound<'py, pyo3::types::PyType>> {
+        #[derive(Clone, FromPyObject, IntoPyObject)]
+        pub enum PyOp {
             $(
-                if op.is_instance_of::<$py_type>() {
-                    return Ok(op.py().get_type::<$py_type>());
-                }
+                #[pyo3(transparent)]
+                $variant($py_type),
             )*
-            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
-                "Unknown operation type: {}",
-                op.get_type().name()?
-            )))
+        }
+
+        impl TryFrom<PyOp> for pipeline::Op {
+            type Error = PyErr;
+
+            fn try_from(op: PyOp) -> PyResult<Self> {
+                match op {
+                    $(
+                        PyOp::$variant(op) => Ok(Self::$variant(op.try_into()?)),
+                    )*
+                }
+            }
+        }
+
+        /// Extract an operation's Python-facing Rust value, preserving its parameters.
+        pub fn extract_py_operation(op: &Bound<'_, PyAny>) -> PyResult<PyOp> {
+            op.extract::<PyOp>()
         }
     };
 

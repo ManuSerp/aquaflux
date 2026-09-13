@@ -22,6 +22,7 @@ fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<interface::PyAggregationFunc>()?;
     m.add_class::<interface::PyMut>()?;
     m.add_class::<interface::PyCol>()?;
+    m.add_class::<interface::section::PySection>()?;
     m.add_class::<CompiledSection>()?;
 
     Ok(())
@@ -53,7 +54,11 @@ pub struct CompiledSection {
 #[pymethods]
 impl CompiledSection {
     pub fn __repr__(&self) -> String {
-        format!("CompiledPipeline({} operations)", self.instructions.len())
+        format!(
+            "CompiledPipeline[{}]({} operations)",
+            self.name.as_deref().unwrap_or("unnamed"),
+            self.instructions.len()
+        )
     }
 
     pub fn execute<'py>(
