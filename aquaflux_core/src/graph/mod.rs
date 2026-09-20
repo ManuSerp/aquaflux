@@ -1,4 +1,5 @@
 pub mod reference;
+pub mod section;
 
 // TODO Next branch steps (see DAG_ARCHITECTURE.md):
 // 1. Build an ExecutionGraph compiler around the existing sections, accepting
