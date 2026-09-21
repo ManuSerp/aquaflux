@@ -1,5 +1,9 @@
-use crate::graph::reference::ReferenceTable;
+use crate::CompiledSection;
+use crate::graph::reference::{FramedReference, ReferenceTable};
 use crate::interface::section::PySection;
+use crate::pipeline::LazyExecutable;
+use polars::lazy::frame::LazyFrame;
+use pyo3::prelude::*;
 pub mod reference;
 pub mod section;
 
@@ -33,7 +37,7 @@ pub mod section;
 
 pub struct IndexedSection {
     pub index: usize,
-    pub section: PySection,
+    pub section: CompiledSection,
 }
 
 pub struct ExecutionGraph {
@@ -50,8 +54,13 @@ impl ExecutionGraph {
         let isections: Vec<IndexedSection> = sections
             .into_iter()
             .enumerate()
-            .map(|(i, section)| IndexedSection { index: i, section })
-            .collect();
+            .map(|(i, section)| {
+                section
+                    .compile()
+                    .map(|section| IndexedSection { index: i, section })
+                    .map_err(|err| err.to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         // reference table:
         let mut table = ReferenceTable::new();
         table.build(&isections)?;
@@ -62,5 +71,117 @@ impl ExecutionGraph {
             dependency_tree: tree,
             ref_table: table,
         })
+    }
+}
+
+pub struct CompiledExecutionGraph {
+    pub graph: ExecutionGraph,
+    pub input_refs: Vec<String>,
+    pub output_refs: Vec<String>,
+    //the lazy plan object nned to be a collection of Lazyframe ? probably one per output ? on zhich ze zill call collect all ?
+    // input will be converted as lazy frame when exec called on them then we recursively apply the section plan on them and the call collect that is the goal
+    // so the compilation can probaly be converting the section with PySection to Compiled section: But could we pre built lazy plan for intermediate step so execute only apply to input and bam done ?
+}
+
+impl CompiledExecutionGraph {
+    pub fn apply_plan(&self, inputs: Vec<FramedReference>) -> Result<Vec<FramedReference>, String> {
+        let table = &self.graph.ref_table;
+        // Slots share the reference table's indices and retain plans for branching.
+        let mut plans: Vec<Option<LazyFrame>> = vec![None; table.references.len()];
+
+        let reference_id = |name: &str| -> Result<usize, String> {
+            table
+                .ref_map
+                .get(name)
+                .copied()
+                .ok_or_else(|| format!("Unknown reference '{name}'"))
+        };
+        // load input plans into the plan slots, and check that all required inputs are present
+
+        for input in inputs {
+            let name = &input.reference.name;
+            let id = reference_id(name)?;
+
+            if !self.input_refs.contains(name) {
+                return Err(format!("Unexpected input '{name}'"));
+            }
+            if !table.references[id].needs.is_empty() {
+                return Err(format!("Input '{name}' is produced by a section"));
+            }
+            if plans[id].is_some() {
+                return Err(format!("Duplicate input '{name}'"));
+            }
+
+            plans[id] = Some(input.lazyframe);
+        }
+        for name in &self.input_refs {
+            let id = reference_id(name)?;
+            if plans[id].is_none() {
+                return Err(format!("Missing input '{name}'"));
+            }
+        }
+        // execute the sections in topological order, building plans for each output reference
+        // TODO adapt the logic to support multiple inputs
+        for layer in &self.graph.execution_layers {
+            for &section_index in layer {
+                let section = &self.graph.sections[section_index].section;
+                let input_name = section.input_ref.as_deref().ok_or_else(|| {
+                    format!("Section {section_index} has no input reference")
+                    // TODO we probably should support that
+                })?;
+                let output_name = section
+                    .output_ref
+                    .as_deref()
+                    .ok_or_else(|| format!("Section {section_index} has no output reference"))?;
+
+                let input_id = reference_id(input_name)?;
+                let output_id = reference_id(output_name)?;
+                let mut plan = plans[input_id]
+                    .as_ref()
+                    .ok_or_else(|| {
+                        format!("Section {section_index}: input '{input_name}' is not available")
+                    })?
+                    .clone();
+
+                if plans[output_id].is_some() {
+                    return Err(format!(
+                        "Section {section_index}: output '{output_name}' already exists"
+                    ));
+                }
+
+                for (op_index, op) in section.instructions.iter().enumerate() {
+                    plan = op.execute_lazy(plan).map_err(|err| {
+                        format!("Section {section_index}, operation {op_index}: {err}")
+                    })?;
+                }
+
+                plans[output_id] = Some(plan);
+            }
+        }
+        // TODO use the fact that we have the plan for intermediate value for debug mod
+        self.output_refs
+            .iter()
+            .map(|name| {
+                let id = reference_id(name)?;
+                let lazyframe = plans[id]
+                    .as_ref()
+                    .ok_or_else(|| format!("Output '{name}' was not built"))?
+                    .clone();
+
+                Ok(FramedReference {
+                    reference: table.references[id].clone(),
+                    lazyframe,
+                })
+            })
+            .collect()
+    }
+    pub fn execute<'py>(
+        &self,
+        _py: Python<'py>,
+        _data: Vec<&Bound<'py, PyAny>>, //Can this be variadic ?
+    ) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        Err(pyo3::exceptions::PyNotImplementedError::new_err(
+            "Execution of compiled graphs is not implemented yet",
+        ))
     }
 }

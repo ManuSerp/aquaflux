@@ -1,3 +1,5 @@
+use polars::lazy::frame::LazyFrame;
+
 use crate::graph::IndexedSection;
 use std::collections::HashMap;
 
@@ -18,6 +20,11 @@ pub struct Reference {
     pub section_index: Vec<usize>,
     pub needs: Vec<usize>,  // producing section (at most one)
     pub needed: Vec<usize>, // consuming sections
+}
+
+pub struct FramedReference {
+    pub reference: Reference,
+    pub lazyframe: LazyFrame,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -271,12 +278,12 @@ impl ReferenceTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interface::section::PySection;
+    use crate::CompiledSection;
 
     fn section(index: usize, input: &str, output: &str) -> IndexedSection {
         IndexedSection {
             index,
-            section: PySection {
+            section: CompiledSection {
                 instructions: Vec::new(),
                 name: Some(format!("section_{index}")),
                 input_ref: Some(input.into()),
