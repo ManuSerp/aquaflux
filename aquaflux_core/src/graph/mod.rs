@@ -4,6 +4,7 @@ use crate::interface::section::PySection;
 use crate::pipeline::{IntoLazy, LazyExecutable, dataframe::from_python, dataframe::to_python};
 use polars::lazy::frame::LazyFrame;
 use pyo3::prelude::*;
+use std::sync::Arc;
 pub mod reference;
 pub mod section;
 
@@ -72,15 +73,43 @@ impl ExecutionGraph {
             ref_table: table,
         })
     }
+
+    pub fn compile(self: &Arc<Self>) -> Result<CompiledExecutionGraph, String> {
+        for indexed in &self.sections {
+            if indexed.section.input_ref.is_none() {
+                return Err(format!("Section {} has no input reference", indexed.index));
+            }
+            if indexed.section.output_ref.is_none() {
+                return Err(format!("Section {} has no output reference", indexed.index));
+            }
+        }
+
+        // Construction already validates producers and builds the execution layers.
+        Ok(CompiledExecutionGraph {
+            graph: Arc::clone(self),
+            input_refs: self
+                .ref_table
+                .inputs
+                .iter()
+                .map(|r| r.name.clone())
+                .collect(),
+            output_refs: self
+                .ref_table
+                .outputs
+                .iter()
+                .map(|r| r.name.clone())
+                .collect(),
+        })
+    }
 }
 
+#[pyclass]
 pub struct CompiledExecutionGraph {
-    pub graph: ExecutionGraph,
+    pub graph: Arc<ExecutionGraph>,
+    #[pyo3(get)]
     pub input_refs: Vec<String>,
+    #[pyo3(get)]
     pub output_refs: Vec<String>,
-    //the lazy plan object nned to be a collection of Lazyframe ? probably one per output ? on zhich ze zill call collect all ?
-    // input will be converted as lazy frame when exec called on them then we recursively apply the section plan on them and the call collect that is the goal
-    // so the compilation can probaly be converting the section with PySection to Compiled section: But could we pre built lazy plan for intermediate step so execute only apply to input and bam done ?
 }
 
 impl CompiledExecutionGraph {
@@ -175,6 +204,11 @@ impl CompiledExecutionGraph {
             })
             .collect()
     }
+}
+
+#[pymethods]
+impl CompiledExecutionGraph {
+    /// Execute named inputs and return Polars DataFrames in output_refs order.
     pub fn execute<'py>(
         &self,
         py: Python<'py>,
@@ -214,19 +248,23 @@ impl CompiledExecutionGraph {
             ))
         })?;
         // resolve the plan with polars and materialize output
-        let resolved = LazyFrame::collect_all_with_engine(
-            output_plan
-                .into_iter()
-                .map(|fr| fr.lazyframe.logical_plan)
-                .collect(),
-            polars::prelude::Engine::Auto,
-            polars::prelude::OptFlags::default(),
-        )
-        .map_err(|err| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "Failed to collect output plan: {err}"
-            ))
-        })?;
+        // Workers may need the GIL to release Python-owned input buffers.
+        let resolved = py
+            .detach(move || {
+                LazyFrame::collect_all_with_engine(
+                    output_plan
+                        .into_iter()
+                        .map(|fr| fr.lazyframe.logical_plan)
+                        .collect(),
+                    polars::prelude::Engine::Auto,
+                    polars::prelude::OptFlags::default(),
+                )
+            })
+            .map_err(|err| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Failed to collect output plan: {err}"
+                ))
+            })?;
 
         resolved
             .into_iter()
@@ -236,8 +274,11 @@ impl CompiledExecutionGraph {
 }
 
 // this will probably go to interface
+#[pyclass(from_py_object)]
+#[derive(Clone)]
 pub struct NamedFrame {
     data: LazyFrame,
+    #[pyo3(get)]
     name: String,
 }
 
@@ -245,14 +286,13 @@ impl NamedFrame {
     pub fn new_from_lf(data: LazyFrame, name: String) -> Self {
         Self { data, name }
     }
+}
 
-    pub fn new_from_py<'py>(py: Python<'py>, data: &Bound<'py, PyAny>, name: String) -> Self {
-        let df = from_python(data).unwrap_or_else(|err| {
-            panic!("Failed to convert Python object to LazyFrame: {err}");
-        });
-        Self {
-            data: df.lazy(),
-            name,
-        }
+#[pymethods]
+impl NamedFrame {
+    #[new]
+    pub fn new_from_py(data: &Bound<'_, PyAny>, name: String) -> PyResult<Self> {
+        let df = from_python(data)?;
+        Ok(Self::new_from_lf(df.lazy(), name))
     }
 }
