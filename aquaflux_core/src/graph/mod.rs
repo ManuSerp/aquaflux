@@ -1,7 +1,7 @@
 use crate::CompiledSection;
 use crate::graph::reference::{FramedReference, ReferenceTable};
 use crate::interface::section::PySection;
-use crate::pipeline::{IntoLazy, LazyExecutable, dataframe::from_python};
+use crate::pipeline::{IntoLazy, LazyExecutable, dataframe::from_python, dataframe::to_python};
 use polars::lazy::frame::LazyFrame;
 use pyo3::prelude::*;
 pub mod reference;
@@ -190,13 +190,17 @@ impl CompiledExecutionGraph {
                     name = nframe.name
                 )));
             } else {
-                let fref = self.graph.ref_table.ref_map.get(&nframe.name).ok_or;
-                ok_or_else(|| {
-                    pyo3::exceptions::PyValueError::new_err(format!(
-                        "Input reference '{name}' not found in graph ref table",
-                        name = nframe.name
-                    ))
-                })?;
+                let fref = self
+                    .graph
+                    .ref_table
+                    .ref_map
+                    .get(&nframe.name)
+                    .ok_or_else(|| {
+                        pyo3::exceptions::PyValueError::new_err(format!(
+                            "Input reference '{name}' not found in graph ref table",
+                            name = nframe.name
+                        ))
+                    })?;
                 input_refs.push(FramedReference {
                     reference: self.graph.ref_table.references[*fref].clone(),
                     lazyframe: nframe.data.clone(),
@@ -210,17 +214,24 @@ impl CompiledExecutionGraph {
             ))
         })?;
         // resolve the plan with polars and materialize output
-        let _resolved = LazyFrame::collect_all_with_engine(
+        let resolved = LazyFrame::collect_all_with_engine(
             output_plan
                 .into_iter()
                 .map(|fr| fr.lazyframe.logical_plan)
                 .collect(),
             polars::prelude::Engine::Auto,
             polars::prelude::OptFlags::default(),
-        );
-        Err(pyo3::exceptions::PyNotImplementedError::new_err(
-            "Execution of compiled graphs is not implemented yet",
-        ))
+        )
+        .map_err(|err| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to collect output plan: {err}"
+            ))
+        })?;
+
+        resolved
+            .into_iter()
+            .map(|df| to_python(py, df))
+            .collect::<PyResult<Vec<_>>>()
     }
 }
 
