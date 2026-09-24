@@ -1,4 +1,6 @@
+pub mod graph;
 pub mod helper;
+pub mod section;
 use crate::interface::helper::extract_expr;
 use crate::pipeline;
 use polars::prelude::{IntoLazy, JoinType};
@@ -28,7 +30,32 @@ macro_rules! define_operations {
                 op.get_type().name()?
             )))
         }
+        #[derive(Clone, FromPyObject, IntoPyObject)]
+        pub enum PyOp {
+            $(
+                #[pyo3(transparent)]
+                $variant($py_type),
+            )*
+        }
+
+        impl TryFrom<PyOp> for pipeline::Op {
+            type Error = PyErr;
+
+            fn try_from(op: PyOp) -> PyResult<Self> {
+                match op {
+                    $(
+                        PyOp::$variant(op) => Ok(Self::$variant(op.try_into()?)),
+                    )*
+                }
+            }
+        }
+
+        /// Extract an operation's Python-facing Rust value, preserving its parameters.
+        pub fn extract_py_operation(op: &Bound<'_, PyAny>) -> PyResult<PyOp> {
+            op.extract::<PyOp>()
+        }
     };
+
 }
 
 // here again to we need to use the enum for the op or could we just directly refer to the op itself driectly.

@@ -56,6 +56,41 @@ result = pipeline.execute(test_data)
 print(result)
 ```
 
+## Multi-section graphs
+
+Use named references to connect sections. Declaration order does not determine
+execution order: graph construction validates producers and dependencies and
+builds topological execution layers.
+
+```python
+clean = aquaflux.Section([aquaflux.CastOp(["amount"], float)])
+clean.input_ref = "orders"
+clean.output_ref = "cleaned"
+
+filter_orders = aquaflux.Section([
+    aquaflux.FilterOp("amount", aquaflux.LogicalOp.Gt, 150.0),
+])
+filter_orders.input_ref = "cleaned"
+filter_orders.output_ref = "high_value"
+
+graph = aquaflux.ExecutionGraph([filter_orders, clean])
+compiled = graph.compile()
+frames = compiled.execute([aquaflux.NamedFrame(test_data, "orders")])
+results = dict(zip(compiled.output_refs, frames))
+print(results["high_value"])
+```
+
+Every graph section must have an `input_ref` and `output_ref`. Compilation infers
+external `input_refs` and terminal `output_refs` (outputs not consumed by another
+section); both properties are read-only. `NamedFrame(data, name)` accepts Pandas
+or Polars DataFrames. `execute` takes a list of named frames and returns a list
+of Polars DataFrames in `output_refs` order. Both the graph and compiled object
+can be reused without consuming their sections or inputs.
+
+See `test_pipeline.py` for a branching graph with a shared intermediate and two
+outputs. Reference-based joins and selecting intermediate outputs are not yet
+exposed by this API.
+
 ## Operations Supported
 
 ### Currently Implemented
