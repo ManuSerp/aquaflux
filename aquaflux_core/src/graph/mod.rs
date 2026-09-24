@@ -1,7 +1,7 @@
 use crate::CompiledSection;
 use crate::graph::reference::{FramedReference, ReferenceTable};
 use crate::interface::section::PySection;
-use crate::pipeline::LazyExecutable;
+use crate::pipeline::{IntoLazy, LazyExecutable, dataframe::from_python};
 use polars::lazy::frame::LazyFrame;
 use pyo3::prelude::*;
 pub mod reference;
@@ -177,11 +177,71 @@ impl CompiledExecutionGraph {
     }
     pub fn execute<'py>(
         &self,
-        _py: Python<'py>,
-        _data: Vec<&Bound<'py, PyAny>>, //Can this be variadic ?
+        py: Python<'py>,
+        input_data: Vec<NamedFrame>, //Can this be variadic ?
     ) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        // first created NamedReference from named frame
+        // we also need a check that ref table was builded (need to be the case to get that struct)
+        let mut input_refs: Vec<FramedReference> = Vec::new();
+        for nframe in input_data.iter() {
+            if !self.input_refs.contains(&nframe.name) {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unexpected input '{name}'",
+                    name = nframe.name
+                )));
+            } else {
+                let fref = self.graph.ref_table.ref_map.get(&nframe.name).ok_or;
+                ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Input reference '{name}' not found in graph ref table",
+                        name = nframe.name
+                    ))
+                })?;
+                input_refs.push(FramedReference {
+                    reference: self.graph.ref_table.references[*fref].clone(),
+                    lazyframe: nframe.data.clone(),
+                });
+            }
+        }
+        // build plan
+        let output_plan = self.apply_plan(input_refs).map_err(|err| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to apply execution plan: {err}"
+            ))
+        })?;
+        // resolve the plan with polars and materialize output
+        let _resolved = LazyFrame::collect_all_with_engine(
+            output_plan
+                .into_iter()
+                .map(|fr| fr.lazyframe.logical_plan)
+                .collect(),
+            polars::prelude::Engine::Auto,
+            polars::prelude::OptFlags::default(),
+        );
         Err(pyo3::exceptions::PyNotImplementedError::new_err(
             "Execution of compiled graphs is not implemented yet",
         ))
+    }
+}
+
+// this will probably go to interface
+pub struct NamedFrame {
+    data: LazyFrame,
+    name: String,
+}
+
+impl NamedFrame {
+    pub fn new_from_lf(data: LazyFrame, name: String) -> Self {
+        Self { data, name }
+    }
+
+    pub fn new_from_py<'py>(py: Python<'py>, data: &Bound<'py, PyAny>, name: String) -> Self {
+        let df = from_python(data).unwrap_or_else(|err| {
+            panic!("Failed to convert Python object to LazyFrame: {err}");
+        });
+        Self {
+            data: df.lazy(),
+            name,
+        }
     }
 }
