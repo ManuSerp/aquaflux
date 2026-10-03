@@ -23,3 +23,7 @@ benchmark = [
     "pandas",
     "polars"
 ]
+
+build = [
+    "maturin>=1.13,<2.0",
+]
