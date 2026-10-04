@@ -8,6 +8,7 @@ use std::sync::Arc;
 pub mod reference;
 pub mod section;
 
+
 // TODO Next branch steps (see DAG_ARCHITECTURE.md):
 // 1. Build an ExecutionGraph compiler around the existing sections, accepting
 //    multiple sections and requested output references. Decide external input
@@ -177,11 +178,33 @@ impl CompiledExecutionGraph {
                         "Section {section_index}: output '{output_name}' already exists"
                     ));
                 }
+                let mut secondary_plans = Vec::new();
+                for secondary_input_name in
+                    section.secondary_input_refs.as_deref().unwrap_or_default()
+                {
+                    // get plan from secondary_input_name
+                    let ref_id = reference_id(secondary_input_name)?;
+                    let plan = plans[ref_id]
+                        .as_ref()
+                        .ok_or_else(|| {
+                            format!(
+                                "Section {section_index}: secondary input '{secondary_input_name}' is not available"
+                            )
+                        })?
+                        .clone();
 
+                    secondary_plans.push(NamedFrame {
+                        data: plan,
+                        name: secondary_input_name.to_string(),
+                    });
+                }
+                // Secondary references are registered as graph dependencies and scheduled topologically.
                 for (op_index, op) in section.instructions.iter().enumerate() {
-                    plan = op.execute_lazy(plan).map_err(|err| {
-                        format!("Section {section_index}, operation {op_index}: {err}")
-                    })?;
+                    plan = op
+                        .execute_lazy(plan, Some(secondary_plans.clone()))
+                        .map_err(|err| {
+                            format!("Section {section_index}, operation {op_index}: {err}")
+                        })?;
                 }
 
                 plans[output_id] = Some(plan);
@@ -277,9 +300,9 @@ impl CompiledExecutionGraph {
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct NamedFrame {
-    data: LazyFrame,
+    pub data: LazyFrame,
     #[pyo3(get)]
-    name: String,
+    pub name: String,
 }
 
 impl NamedFrame {
@@ -294,5 +317,182 @@ impl NamedFrame {
     pub fn new_from_py(data: &Bound<'_, PyAny>, name: String) -> PyResult<Self> {
         let df = from_python(data)?;
         Ok(Self::new_from_lf(df.lazy(), name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interface::{PyJoinOp, PyOp};
+    use polars::prelude::*;
+
+    fn section(input: &str, output: &str, secondary: Option<&str>) -> PySection {
+        let instructions = secondary
+            .map(|name| {
+                vec![PyOp::Join(PyJoinOp::new(
+                    vec!["id".into()],
+                    vec!["id".into()],
+                    name.into(),
+                    "inner".into(),
+                ))]
+            })
+            .unwrap_or_default();
+        let mut section = PySection::new(instructions);
+        section.input_ref = Some(input.into());
+        section.output_ref = Some(output.into());
+        section.secondary_input_refs = secondary.map(|name| vec![name.into()]);
+        section
+    }
+
+    fn input(graph: &CompiledExecutionGraph, name: &str, data: DataFrame) -> FramedReference {
+        FramedReference {
+            reference: graph.graph.ref_table.get_ref(name).unwrap().clone(),
+            lazyframe: data.lazy(),
+        }
+    }
+
+    fn assert_join_result(outputs: Vec<FramedReference>) {
+        assert_eq!(outputs.len(), 1);
+        let output = outputs.into_iter().next().unwrap();
+        assert_eq!(output.reference.name, "joined");
+        let result = output.lazyframe.collect().unwrap();
+        let expected = df!("id" => [2i64], "amount" => [20i64], "value" => [200i64]).unwrap();
+        assert!(
+            result.equals(&expected),
+            "unexpected join result: {result:?}"
+        );
+    }
+
+    #[test]
+    fn join_waits_for_both_internally_produced_parents() {
+        let graph = Arc::new(
+            ExecutionGraph::new(vec![
+                section("orders", "joined", Some("customers")),
+                section("raw_orders", "orders", None),
+                section("raw_customers", "customers", None),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(graph.execution_layers, vec![vec![1, 2], vec![0]]);
+        assert_eq!(graph.dependency_tree, vec![vec![], vec![0], vec![0]]);
+
+        let compiled = graph.compile().unwrap();
+        assert_eq!(compiled.input_refs, vec!["raw_orders", "raw_customers"]);
+        let outputs = compiled
+            .apply_plan(vec![
+                input(
+                    &compiled,
+                    "raw_orders",
+                    df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
+                ),
+                input(
+                    &compiled,
+                    "raw_customers",
+                    df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
+                ),
+            ])
+            .unwrap();
+        assert_join_result(outputs);
+    }
+
+    #[test]
+    fn join_waits_for_secondary_input_produced_by_later_section() {
+        let graph = Arc::new(
+            ExecutionGraph::new(vec![
+                section("orders", "joined", Some("customers")),
+                section("raw_customers", "customers", None),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(graph.execution_layers, vec![vec![1], vec![0]]);
+        assert_eq!(graph.dependency_tree, vec![vec![], vec![0]]);
+        let customers = graph.ref_table.get_ref("customers").unwrap();
+        assert_eq!(customers.reference_type, reference::ReferenceType::Internal);
+        assert_eq!(customers.needs, vec![1]);
+        assert_eq!(customers.needed, vec![0]);
+
+        let compiled = graph.compile().unwrap();
+        assert_eq!(compiled.input_refs, vec!["orders", "raw_customers"]);
+        assert_eq!(compiled.output_refs, vec!["joined"]);
+        let outputs = compiled
+            .apply_plan(vec![
+                input(
+                    &compiled,
+                    "orders",
+                    df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
+                ),
+                input(
+                    &compiled,
+                    "raw_customers",
+                    df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
+                ),
+            ])
+            .unwrap();
+        assert_join_result(outputs);
+    }
+
+    #[test]
+    fn join_accepts_external_secondary_input() {
+        let graph = Arc::new(
+            ExecutionGraph::new(vec![section("orders", "joined", Some("customers"))]).unwrap(),
+        );
+        assert_eq!(graph.execution_layers, vec![vec![0]]);
+        let compiled = graph.compile().unwrap();
+        assert_eq!(compiled.input_refs, vec!["orders", "customers"]);
+        let outputs = compiled
+            .apply_plan(vec![
+                input(
+                    &compiled,
+                    "customers",
+                    df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
+                ),
+                input(
+                    &compiled,
+                    "orders",
+                    df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
+                ),
+            ])
+            .unwrap();
+        assert_join_result(outputs);
+    }
+
+    #[test]
+    fn join_rejects_missing_external_secondary_input() {
+        let graph = Arc::new(
+            ExecutionGraph::new(vec![section("orders", "joined", Some("customers"))]).unwrap(),
+        );
+        let compiled = graph.compile().unwrap();
+        let error = compiled
+            .apply_plan(vec![input(
+                &compiled,
+                "orders",
+                df!("id" => [1i64]).unwrap(),
+            )])
+            .err()
+            .expect("missing secondary input must be rejected");
+        assert_eq!(error, "Missing input 'customers'");
+    }
+
+    #[test]
+    fn unavailable_secondary_plan_returns_contextual_error() {
+        let mut graph = ExecutionGraph::new(vec![
+            section("orders", "joined", Some("customers")),
+            section("raw_customers", "customers", None),
+        ])
+        .unwrap();
+        // Simulate a malformed schedule that runs the consumer before its producer.
+        graph.execution_layers = vec![vec![0], vec![1]];
+        let compiled = Arc::new(graph).compile().unwrap();
+        let error = compiled
+            .apply_plan(vec![
+                input(&compiled, "orders", df!("id" => [1i64]).unwrap()),
+                input(&compiled, "raw_customers", df!("id" => [1i64]).unwrap()),
+            ])
+            .err()
+            .expect("unavailable secondary plan must return an error, not panic");
+        assert_eq!(
+            error,
+            "Section 0: secondary input 'customers' is not available"
+        );
     }
 }

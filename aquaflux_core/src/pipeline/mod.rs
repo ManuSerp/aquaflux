@@ -3,9 +3,16 @@ pub use polars::prelude::IntoLazy;
 use polars::prelude::LazyFrame;
 use polars::prelude::SortMultipleOptions;
 use polars::prelude::*;
+
+use crate::graph::NamedFrame;
 /// Trait for operations that work on LazyFrames
 pub trait LazyExecutable {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String>;
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String>;
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>);
 }
 
 // I am still unsure about that enum, is a dyn trait better ? (that woulod avoid the need to maintain it)
@@ -25,25 +32,35 @@ pub enum Op {
 }
 
 impl LazyExecutable for Op {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         match self {
-            Op::Select(op) => op.execute_lazy(lf),
-            Op::FillNa(op) => op.execute_lazy(lf),
-            Op::Cast(op) => op.execute_lazy(lf),
-            Op::Rename(op) => op.execute_lazy(lf),
-            Op::Drop(op) => op.execute_lazy(lf),
-            Op::DropNa(op) => op.execute_lazy(lf),
-            Op::Filter(op) => op.execute_lazy(lf),
-            Op::FilterCol(op) => op.execute_lazy(lf),
-            Op::GroupBy(op) => op.execute_lazy(lf),
-            Op::WithColumns(op) => op.execute_lazy(lf),
-            Op::Join(op) => op.execute_lazy(lf),
-            Op::Sort(op) => op.execute_lazy(lf),
+            Op::Select(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::FillNa(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Cast(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Rename(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Drop(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::DropNa(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Filter(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::FilterCol(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::GroupBy(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::WithColumns(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Join(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Sort(op) => op.execute_lazy(lf, secondary_lfs),
+        }
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        match self {
+            Op::Join(op) => op.is_secondary_input_ref_needed(),
+            _ => (false, None),
         }
     }
 }
 // todo
-// waht the point of that, maybe we should remove it and simpl use polars::prelude::DataType directly
+// what the point of that, maybe we should remove it and simpl use polars::prelude::DataType directly
 #[derive(Clone)]
 pub enum DataType {
     Int64,
@@ -87,9 +104,16 @@ pub struct SelectOp {
 }
 
 impl LazyExecutable for SelectOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let col_exprs: Vec<Expr> = self.columns.iter().map(|c| col(c)).collect();
         Ok(lf.select(col_exprs))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }
 
@@ -99,7 +123,11 @@ pub struct FillNaOp {
 }
 
 impl LazyExecutable for FillNaOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let fill_expr = self.value.scalar_to_expr();
 
         let exprs: Vec<Expr> = self
@@ -110,6 +138,9 @@ impl LazyExecutable for FillNaOp {
 
         Ok(lf.with_columns(exprs))
     }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
+    }
 }
 
 pub struct CastOp {
@@ -118,7 +149,11 @@ pub struct CastOp {
 }
 
 impl LazyExecutable for CastOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let exprs: Vec<Expr> = self
             .columns
             .iter()
@@ -126,6 +161,9 @@ impl LazyExecutable for CastOp {
             .collect();
 
         Ok(lf.with_columns(exprs))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }
 
@@ -135,8 +173,15 @@ pub struct RenameOp {
 }
 
 impl LazyExecutable for RenameOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         Ok(lf.rename(&self.columns, &self.new_names, true))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }
 
@@ -145,17 +190,31 @@ pub struct DropOp {
 }
 
 impl LazyExecutable for DropOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let exclude_cols: Vec<&str> = self.columns.iter().map(|s| s.as_str()).collect();
         Ok(lf.select([all().exclude_cols(exclude_cols).as_expr()]))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }
 
 pub struct DropNaOp {}
 
 impl LazyExecutable for DropNaOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         Ok(lf.drop_nulls(None))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }
 
@@ -175,7 +234,11 @@ pub struct FilterOp {
 }
 
 impl LazyExecutable for FilterOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let filter_expr = match self.operator {
             LogicalOperator::Eq => col(&self.column).eq(self.value.scalar_to_expr()),
             LogicalOperator::NotEq => col(&self.column).neq(self.value.scalar_to_expr()),
@@ -187,6 +250,9 @@ impl LazyExecutable for FilterOp {
 
         Ok(lf.filter(filter_expr))
     }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
+    }
 }
 
 pub struct FilterColOp {
@@ -196,7 +262,11 @@ pub struct FilterColOp {
 }
 
 impl LazyExecutable for FilterColOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let filter_expr = match self.operator {
             LogicalOperator::Eq => col(&self.column).eq(col(&self.other_column)),
             LogicalOperator::NotEq => col(&self.column).neq(col(&self.other_column)),
@@ -207,6 +277,9 @@ impl LazyExecutable for FilterColOp {
         };
 
         Ok(lf.filter(filter_expr))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }
 
@@ -247,7 +320,11 @@ impl AggFunction {
 }
 
 impl LazyExecutable for GroupByOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let group_exprs: Vec<Expr> = self
             .group_columns
             .iter()
@@ -261,6 +338,9 @@ impl LazyExecutable for GroupByOp {
             .collect();
 
         Ok(lf.group_by(group_exprs).agg(agg_exprs))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }
 
@@ -328,7 +408,11 @@ pub struct WithColumnsOp {
 }
 
 impl LazyExecutable for WithColumnsOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let mut_exp: Vec<Expr> = self
             .mutations
             .iter()
@@ -348,17 +432,33 @@ impl LazyExecutable for WithColumnsOp {
 
         Ok(lf.with_columns(mut_exp))
     }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
+    }
 }
 
 pub struct JoinOp {
-    pub other: LazyFrame,
+    pub other: String,
     pub left_on: Vec<String>,
     pub right_on: Vec<String>,
     pub how: polars::prelude::JoinType,
 }
 
 impl LazyExecutable for JoinOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
+        let mut other_lf = None;
+        // TODO: super ugly to fix
+        for lf in secondary_lfs.unwrap_or_default() {
+            if lf.name == self.other {
+                other_lf = Some(lf.data);
+                break;
+            }
+        }
+
         let left_on_exp = self
             .left_on
             .iter()
@@ -369,12 +469,14 @@ impl LazyExecutable for JoinOp {
             .iter()
             .map(|name| col(name))
             .collect::<Vec<Expr>>();
-        Ok(lf.join(
-            self.other.clone(),
-            left_on_exp,
-            right_on_exp,
-            self.how.clone().into(),
-        ))
+        if let Some(other_lf) = other_lf {
+            Ok(lf.join(other_lf, left_on_exp, right_on_exp, self.how.clone().into()))
+        } else {
+            Err("other_lf is None".to_string())
+        }
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (true, Some(vec![self.other.clone()]))
     }
 }
 
@@ -384,12 +486,19 @@ pub struct SortOp {
 }
 
 impl LazyExecutable for SortOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<NamedFrame>>,
+    ) -> Result<LazyFrame, String> {
         let sort_exprs: Vec<Expr> = self.columns.iter().map(|col_name| col(col_name)).collect();
 
         Ok(lf.sort_by_exprs(
             sort_exprs,
             SortMultipleOptions::default().with_order_descending(self.descending), // Maybe we want to be column specific in the future, but for now we will just use the same order for all columns
         ))
+    }
+    fn is_secondary_input_ref_needed(&self) -> (bool, Option<Vec<String>>) {
+        (false, None)
     }
 }

@@ -164,17 +164,21 @@ print(orders_df)
 print("\nCustomers DataFrame (right):")
 print(customers_df)
 
+# Secondary frames are resolved by the reference name used in JoinOp.other.
+secondary_customers = [aquaflux.NamedFrame(customers_df, "customers")]
+
 # Inner join: only matching rows
 join_inner_op = aquaflux.JoinOp(
     left_on=["customer_id"],
     right_on=["id"],
-    other=customers_df,
+    other="customers",
     how="inner"
 )
 
 section_join_inner = aquaflux.Section([join_inner_op])
+section_join_inner.secondary_input_refs = ["customers"]
 pipeline_join_inner = section_join_inner.compile()
-result_join_inner = pipeline_join_inner.execute(orders_df)
+result_join_inner = pipeline_join_inner.execute(orders_df, secondary_customers)
 
 print("\nInner Join Result (orders with matching customers):")
 print(result_join_inner)
@@ -183,13 +187,14 @@ print(result_join_inner)
 join_left_op = aquaflux.JoinOp(
     left_on=["customer_id"],
     right_on=["id"],
-    other=customers_df,
+    other="customers",
     how="left"
 )
 
 section_join_left = aquaflux.Section([join_left_op])
+section_join_left.secondary_input_refs = ["customers"]
 pipeline_join_left = section_join_left.compile()
-result_join_left = pipeline_join_left.execute(orders_df)
+result_join_left = pipeline_join_left.execute(orders_df, secondary_customers)
 
 print("\nLeft Join Result (all orders, customers where available):")
 print(result_join_left)
@@ -454,3 +459,130 @@ print("\nCustomer sales leaderboard (all orders, grouped by customer):")
 print(example_results["customer_sales"])
 print("\nHigh-value orders (individual orders with a total above 150):")
 print(example_results["high_value_orders"])
+
+
+# Three inputs, two reference-based joins, and two reports from shared enrichment.
+print("\n--- Example: Join Orders, Products, and Customers ---")
+print(
+    "products -> prepared_products --+\n"
+    "                               | secondary input\n"
+    "orders --------------------> enriched_orders -> regional_sales\n"
+    "                               |             -> large_orders\n"
+    "customers ---------------------+ secondary input"
+)
+
+multi_orders = polars.DataFrame({
+    "order_id": [1, 2, 3, 4, 5],
+    "customer_id": [101, 102, 101, 999, 101],
+    "sku": ["A", "B", "B", "A", "A"],
+    "quantity": [2, 3, 1, 4, 0],
+})
+multi_products = polars.DataFrame({
+    "sku": ["A", "B"],
+    "unit_price": ["10.0", "20.0"],
+})
+multi_customers = polars.DataFrame({
+    "customer_id": [101, 102],
+    "customer": ["Alice", "Bob"],
+    "region": ["North", "South"],
+})
+for label, frame in (
+    ("Orders", multi_orders),
+    ("Products", multi_products),
+    ("Customers", multi_customers),
+):
+    print(f"\n{label} input:")
+    print(frame)
+
+multi_prepare_products = aquaflux.Section([
+    aquaflux.CastOp(["unit_price"], float),
+])
+multi_prepare_products.name = "prepare_product_prices"
+multi_prepare_products.input_ref = "products"
+multi_prepare_products.output_ref = "prepared_products"
+
+multi_enrich = aquaflux.Section([
+    aquaflux.FilterOp("quantity", aquaflux.LogicalOp.Gt, 0),
+    aquaflux.JoinOp(
+        left_on=["sku"],
+        right_on=["sku"],
+        other="prepared_products",
+        how="inner",
+    ),
+    aquaflux.JoinOp(
+        left_on=["customer_id"],
+        right_on=["customer_id"],
+        other="customers",
+        how="left",
+    ),
+    aquaflux.FillNaOp(["customer", "region"], "Unknown"),
+    aquaflux.WithColumns([
+        (aquaflux.Col("unit_price") * aquaflux.Col("quantity")).alias("order_total"),
+    ]),
+])
+multi_enrich.name = "join_and_price_orders"
+multi_enrich.input_ref = "orders"
+# One secondary plan is produced internally; the other is an external input.
+multi_enrich.secondary_input_refs = ["prepared_products", "customers"]
+multi_enrich.output_ref = "enriched_orders"
+
+multi_summary = aquaflux.Section([
+    aquaflux.GroupByOp(
+        group_columns=["region"],
+        aggregations=[
+            ("order_total", aquaflux.AggOp.Sum, "total_sales"),
+            ("quantity", aquaflux.AggOp.Sum, "items_sold"),
+        ],
+    ),
+    aquaflux.SortOp(["region"], descending=False),
+])
+multi_summary.name = "report_regional_sales"
+multi_summary.input_ref = "enriched_orders"
+multi_summary.output_ref = "regional_sales"
+
+multi_large_orders = aquaflux.Section([
+    aquaflux.FilterOp("order_total", aquaflux.LogicalOp.Gt, 30.0),
+    aquaflux.SelectOp(["order_id", "customer", "region", "order_total"]),
+    aquaflux.SortOp(["order_total", "order_id"], descending=True),
+])
+multi_large_orders.name = "report_large_orders"
+multi_large_orders.input_ref = "enriched_orders"
+multi_large_orders.output_ref = "large_orders"
+
+# Reports precede enrichment, which itself precedes its secondary-plan producer.
+multi_graph = aquaflux.ExecutionGraph([
+    multi_summary,
+    multi_large_orders,
+    multi_enrich,
+    multi_prepare_products,
+]).compile()
+assert set(multi_graph.input_refs) == {"orders", "products", "customers"}
+assert set(multi_graph.output_refs) == {"regional_sales", "large_orders"}
+
+# Named inputs can be supplied in any order; no intermediate frames are required.
+multi_frames = multi_graph.execute([
+    aquaflux.NamedFrame(multi_customers, "customers"),
+    aquaflux.NamedFrame(multi_products, "products"),
+    aquaflux.NamedFrame(multi_orders, "orders"),
+])
+assert len(multi_frames) == 2
+multi_results = dict(zip(multi_graph.output_refs, multi_frames))
+assert multi_results["regional_sales"].columns == ["region", "total_sales", "items_sold"]
+assert multi_results["regional_sales"].rows() == [
+    ("North", 40.0, 3),
+    ("South", 60.0, 3),
+    ("Unknown", 40.0, 4),
+]
+assert multi_results["large_orders"].columns == [
+    "order_id", "customer", "region", "order_total",
+]
+assert multi_results["large_orders"].rows() == [
+    (2, "Bob", "South", 60.0),
+    (4, "Unknown", "Unknown", 40.0),
+]
+
+print("\nRegional sales (zero-quantity orders excluded):")
+print(multi_results["regional_sales"])
+print("\nLarge orders (unmatched customers retained by the left join):")
+print(multi_results["large_orders"])
+print("Multi-input join graph assertions passed")

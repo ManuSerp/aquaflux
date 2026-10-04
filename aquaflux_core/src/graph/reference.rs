@@ -79,6 +79,29 @@ impl ReferenceTable {
                     });
                 }
             }
+            if let Some(secondary_input_refs) = &isection.section.secondary_input_refs {
+                for secondary_input_name in secondary_input_refs {
+                    if let Some(reference) = table.get_ref_mut(secondary_input_name) {
+                        if reference.reference_type == ReferenceType::Output {
+                            reference.reference_type = ReferenceType::Internal;
+                        }
+                        if !reference.section_index.contains(&isection.index) {
+                            reference.section_index.push(isection.index);
+                        }
+                        if !reference.needed.contains(&isection.index) {
+                            reference.needed.push(isection.index);
+                        }
+                    } else {
+                        table.add_ref(Reference {
+                            name: secondary_input_name.clone(),
+                            reference_type: ReferenceType::Input,
+                            section_index: vec![isection.index],
+                            needs: Vec::new(),
+                            needed: vec![isection.index],
+                        });
+                    }
+                }
+            }
 
             if let Some(output) = &isection.section.output_ref {
                 if let Some(reference) = table.get_ref_mut(output) {
@@ -287,9 +310,36 @@ mod tests {
                 instructions: Vec::new(),
                 name: Some(format!("section_{index}")),
                 input_ref: Some(input.into()),
+                secondary_input_refs: None,
                 output_ref: Some(output.into()),
             },
         }
+    }
+
+    #[test]
+    fn rejects_cycle_formed_only_by_secondary_references() {
+        let mut first = section(0, "source_a", "a");
+        first.section.secondary_input_refs = Some(vec!["b".into()]);
+        let mut second = section(1, "source_b", "b");
+        second.section.secondary_input_refs = Some(vec!["a".into()]);
+        let mut table = ReferenceTable::new();
+        table.build(&[first, second]).unwrap();
+
+        let a = table.get_ref("a").unwrap();
+        assert_eq!(a.reference_type, ReferenceType::Internal);
+        assert_eq!(a.needs, vec![0]);
+        assert_eq!(a.needed, vec![1]);
+        let b = table.get_ref("b").unwrap();
+        assert_eq!(b.reference_type, ReferenceType::Internal);
+        assert_eq!(b.needs, vec![1]);
+        assert_eq!(b.needed, vec![0]);
+
+        let error = table.build_execution_layers(2).unwrap_err();
+        assert!(error.contains("Cycle detected"), "{error}");
+        assert!(error.contains("0"), "{error}");
+        assert!(error.contains("1"), "{error}");
+        assert!(error.contains("a"), "{error}");
+        assert!(error.contains("b"), "{error}");
     }
 
     #[test]
