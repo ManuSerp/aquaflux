@@ -364,6 +364,38 @@ mod tests {
     }
 
     #[test]
+    fn join_waits_for_both_internally_produced_parents() {
+        let graph = Arc::new(
+            ExecutionGraph::new(vec![
+                section("orders", "joined", Some("customers")),
+                section("raw_orders", "orders", None),
+                section("raw_customers", "customers", None),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(graph.execution_layers, vec![vec![1, 2], vec![0]]);
+        assert_eq!(graph.dependency_tree, vec![vec![], vec![0], vec![0]]);
+
+        let compiled = graph.compile().unwrap();
+        assert_eq!(compiled.input_refs, vec!["raw_orders", "raw_customers"]);
+        let outputs = compiled
+            .apply_plan(vec![
+                input(
+                    &compiled,
+                    "raw_orders",
+                    df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
+                ),
+                input(
+                    &compiled,
+                    "raw_customers",
+                    df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
+                ),
+            ])
+            .unwrap();
+        assert_join_result(outputs);
+    }
+
+    #[test]
     fn join_waits_for_secondary_input_produced_by_later_section() {
         let graph = Arc::new(
             ExecutionGraph::new(vec![
