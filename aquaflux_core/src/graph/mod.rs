@@ -198,7 +198,7 @@ impl CompiledExecutionGraph {
                         name: secondary_input_name.to_string(),
                     });
                 }
-                // todo load plan from secondary_plans from the refs: THAT ALSO MEANS THE CURRENT TOPOLOGICAL ALGO IS WRONGAS IT DIDNT TOOK INTO ACCOUNT SECONDARY INPUTS FOR dependencies
+                // Secondary references are registered as graph dependencies and scheduled topologically.
                 for (op_index, op) in section.instructions.iter().enumerate() {
                     plan = op
                         .execute_lazy(plan, Some(secondary_plans.clone()))
