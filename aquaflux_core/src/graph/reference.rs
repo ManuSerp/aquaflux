@@ -317,6 +317,32 @@ mod tests {
     }
 
     #[test]
+    fn rejects_cycle_formed_only_by_secondary_references() {
+        let mut first = section(0, "source_a", "a");
+        first.section.secondary_input_refs = Some(vec!["b".into()]);
+        let mut second = section(1, "source_b", "b");
+        second.section.secondary_input_refs = Some(vec!["a".into()]);
+        let mut table = ReferenceTable::new();
+        table.build(&[first, second]).unwrap();
+
+        let a = table.get_ref("a").unwrap();
+        assert_eq!(a.reference_type, ReferenceType::Internal);
+        assert_eq!(a.needs, vec![0]);
+        assert_eq!(a.needed, vec![1]);
+        let b = table.get_ref("b").unwrap();
+        assert_eq!(b.reference_type, ReferenceType::Internal);
+        assert_eq!(b.needs, vec![1]);
+        assert_eq!(b.needed, vec![0]);
+
+        let error = table.build_execution_layers(2).unwrap_err();
+        assert!(error.contains("Cycle detected"), "{error}");
+        assert!(error.contains("0"), "{error}");
+        assert!(error.contains("1"), "{error}");
+        assert!(error.contains("a"), "{error}");
+        assert!(error.contains("b"), "{error}");
+    }
+
+    #[test]
     fn classifies_forward_references_and_shared_consumers() {
         for sections in [
             vec![
