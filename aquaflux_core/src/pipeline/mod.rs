@@ -5,7 +5,11 @@ use polars::prelude::SortMultipleOptions;
 use polars::prelude::*;
 /// Trait for operations that work on LazyFrames
 pub trait LazyExecutable {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String>;
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String>;
 }
 
 // I am still unsure about that enum, is a dyn trait better ? (that woulod avoid the need to maintain it)
@@ -25,25 +29,29 @@ pub enum Op {
 }
 
 impl LazyExecutable for Op {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         match self {
-            Op::Select(op) => op.execute_lazy(lf),
-            Op::FillNa(op) => op.execute_lazy(lf),
-            Op::Cast(op) => op.execute_lazy(lf),
-            Op::Rename(op) => op.execute_lazy(lf),
-            Op::Drop(op) => op.execute_lazy(lf),
-            Op::DropNa(op) => op.execute_lazy(lf),
-            Op::Filter(op) => op.execute_lazy(lf),
-            Op::FilterCol(op) => op.execute_lazy(lf),
-            Op::GroupBy(op) => op.execute_lazy(lf),
-            Op::WithColumns(op) => op.execute_lazy(lf),
-            Op::Join(op) => op.execute_lazy(lf),
-            Op::Sort(op) => op.execute_lazy(lf),
+            Op::Select(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::FillNa(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Cast(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Rename(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Drop(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::DropNa(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Filter(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::FilterCol(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::GroupBy(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::WithColumns(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Join(op) => op.execute_lazy(lf, secondary_lfs),
+            Op::Sort(op) => op.execute_lazy(lf, secondary_lfs),
         }
     }
 }
 // todo
-// waht the point of that, maybe we should remove it and simpl use polars::prelude::DataType directly
+// what the point of that, maybe we should remove it and simpl use polars::prelude::DataType directly
 #[derive(Clone)]
 pub enum DataType {
     Int64,
@@ -87,7 +95,11 @@ pub struct SelectOp {
 }
 
 impl LazyExecutable for SelectOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let col_exprs: Vec<Expr> = self.columns.iter().map(|c| col(c)).collect();
         Ok(lf.select(col_exprs))
     }
@@ -99,7 +111,11 @@ pub struct FillNaOp {
 }
 
 impl LazyExecutable for FillNaOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let fill_expr = self.value.scalar_to_expr();
 
         let exprs: Vec<Expr> = self
@@ -118,7 +134,11 @@ pub struct CastOp {
 }
 
 impl LazyExecutable for CastOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let exprs: Vec<Expr> = self
             .columns
             .iter()
@@ -135,7 +155,11 @@ pub struct RenameOp {
 }
 
 impl LazyExecutable for RenameOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         Ok(lf.rename(&self.columns, &self.new_names, true))
     }
 }
@@ -145,7 +169,11 @@ pub struct DropOp {
 }
 
 impl LazyExecutable for DropOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let exclude_cols: Vec<&str> = self.columns.iter().map(|s| s.as_str()).collect();
         Ok(lf.select([all().exclude_cols(exclude_cols).as_expr()]))
     }
@@ -154,7 +182,11 @@ impl LazyExecutable for DropOp {
 pub struct DropNaOp {}
 
 impl LazyExecutable for DropNaOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         Ok(lf.drop_nulls(None))
     }
 }
@@ -175,7 +207,11 @@ pub struct FilterOp {
 }
 
 impl LazyExecutable for FilterOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let filter_expr = match self.operator {
             LogicalOperator::Eq => col(&self.column).eq(self.value.scalar_to_expr()),
             LogicalOperator::NotEq => col(&self.column).neq(self.value.scalar_to_expr()),
@@ -196,7 +232,11 @@ pub struct FilterColOp {
 }
 
 impl LazyExecutable for FilterColOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let filter_expr = match self.operator {
             LogicalOperator::Eq => col(&self.column).eq(col(&self.other_column)),
             LogicalOperator::NotEq => col(&self.column).neq(col(&self.other_column)),
@@ -247,7 +287,11 @@ impl AggFunction {
 }
 
 impl LazyExecutable for GroupByOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let group_exprs: Vec<Expr> = self
             .group_columns
             .iter()
@@ -328,7 +372,11 @@ pub struct WithColumnsOp {
 }
 
 impl LazyExecutable for WithColumnsOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let mut_exp: Vec<Expr> = self
             .mutations
             .iter()
@@ -351,14 +399,19 @@ impl LazyExecutable for WithColumnsOp {
 }
 
 pub struct JoinOp {
-    pub other: LazyFrame,
+    pub other: String,
     pub left_on: Vec<String>,
     pub right_on: Vec<String>,
     pub how: polars::prelude::JoinType,
 }
 
 impl LazyExecutable for JoinOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
+        let other_lf = secondary_lfs.as_ref().and_then(|lfs| lfs.get(0)).cloned();
         let left_on_exp = self
             .left_on
             .iter()
@@ -384,7 +437,11 @@ pub struct SortOp {
 }
 
 impl LazyExecutable for SortOp {
-    fn execute_lazy(&self, lf: LazyFrame) -> Result<LazyFrame, String> {
+    fn execute_lazy(
+        &self,
+        lf: LazyFrame,
+        _secondary_lfs: Option<Vec<LazyFrame>>,
+    ) -> Result<LazyFrame, String> {
         let sort_exprs: Vec<Expr> = self.columns.iter().map(|col_name| col(col_name)).collect();
 
         Ok(lf.sort_by_exprs(

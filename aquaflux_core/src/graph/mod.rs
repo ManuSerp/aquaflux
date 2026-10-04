@@ -154,6 +154,7 @@ impl CompiledExecutionGraph {
         for layer in &self.graph.execution_layers {
             for &section_index in layer {
                 let section = &self.graph.sections[section_index].section;
+                // TODO: Extract multiple sub ref and then pass them to execute_lazy
                 let input_name = section.input_ref.as_deref().ok_or_else(|| {
                     format!("Section {section_index} has no input reference")
                     // TODO we probably should support that
@@ -179,7 +180,7 @@ impl CompiledExecutionGraph {
                 }
 
                 for (op_index, op) in section.instructions.iter().enumerate() {
-                    plan = op.execute_lazy(plan).map_err(|err| {
+                    plan = op.execute_lazy(plan, None).map_err(|err| {
                         format!("Section {section_index}, operation {op_index}: {err}")
                     })?;
                 }

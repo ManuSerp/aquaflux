@@ -709,7 +709,7 @@ pub struct PyJoinOp {
     #[pyo3(get, set)]
     pub right_on: Vec<String>,
     #[pyo3(get, set)]
-    pub other: Py<PyAny>, // python dataframe, TODO: neeed a way to accept already lazy dataframe from previous step
+    pub other: String, // Nqme of the reference to be used; will then resolved from the context (graph or simple section call)
     #[pyo3(get, set)]
     pub how: String, // "inner", "left", "right", "outer"
 }
@@ -717,7 +717,7 @@ pub struct PyJoinOp {
 #[pymethods]
 impl PyJoinOp {
     #[new]
-    pub fn new(left_on: Vec<String>, right_on: Vec<String>, other: Py<PyAny>, how: String) -> Self {
+    pub fn new(left_on: Vec<String>, right_on: Vec<String>, other: String, how: String) -> Self {
         PyJoinOp {
             left_on,
             right_on,
