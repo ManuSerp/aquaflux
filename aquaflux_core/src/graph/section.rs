@@ -37,6 +37,7 @@ impl CompiledSection {
         )
     }
 
+    #[pyo3(signature = (data, secondary_data=None))]
     pub fn execute<'py>(
         &self,
         py: Python<'py>,
