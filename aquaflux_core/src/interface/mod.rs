@@ -3,7 +3,7 @@ pub mod helper;
 pub mod section;
 use crate::interface::helper::extract_expr;
 use crate::pipeline;
-use polars::prelude::{IntoLazy, JoinType};
+use polars::prelude::JoinType;
 use pyo3::prelude::*;
 
 /// Python-facing operation types

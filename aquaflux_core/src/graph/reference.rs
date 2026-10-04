@@ -79,6 +79,29 @@ impl ReferenceTable {
                     });
                 }
             }
+            if let Some(secondary_input_refs) = &isection.section.secondary_input_refs {
+                for secondary_input_name in secondary_input_refs {
+                    if let Some(reference) = table.get_ref_mut(secondary_input_name) {
+                        if reference.reference_type == ReferenceType::Output {
+                            reference.reference_type = ReferenceType::Internal;
+                        }
+                        if !reference.section_index.contains(&isection.index) {
+                            reference.section_index.push(isection.index);
+                        }
+                        if !reference.needed.contains(&isection.index) {
+                            reference.needed.push(isection.index);
+                        }
+                    } else {
+                        table.add_ref(Reference {
+                            name: secondary_input_name.clone(),
+                            reference_type: ReferenceType::Input,
+                            section_index: vec![isection.index],
+                            needs: Vec::new(),
+                            needed: vec![isection.index],
+                        });
+                    }
+                }
+            }
 
             if let Some(output) = &isection.section.output_ref {
                 if let Some(reference) = table.get_ref_mut(output) {
