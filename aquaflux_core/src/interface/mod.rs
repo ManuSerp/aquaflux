@@ -733,18 +733,12 @@ impl TryFrom<PyJoinOp> for pipeline::JoinOp {
     type Error = PyErr;
 
     fn try_from(py_op: PyJoinOp) -> PyResult<Self> {
-        Python::attach(|py| py_op.into_join_op(py))
+        py_op.into_join_op()
     }
 }
 
 impl PyJoinOp {
-    /// Convert to the internal JoinOp, requires the GIL to convert the DataFrame
-    pub fn into_join_op(self, py: Python<'_>) -> PyResult<pipeline::JoinOp> {
-        // Bind the Py<PyAny> to the current GIL lifetime
-        let bound_other = self.other.bind(py);
-        // Convert Python DataFrame to Rust Polars DataFrame
-        let df = crate::pipeline::dataframe::from_python(bound_other)?;
-
+    pub fn into_join_op(self) -> PyResult<pipeline::JoinOp> {
         // Convert string to JoinType
         let join_type = match self.how.to_lowercase().as_str() {
             "inner" => JoinType::Inner,
@@ -763,7 +757,7 @@ impl PyJoinOp {
         Ok(pipeline::JoinOp {
             left_on: self.left_on,
             right_on: self.right_on,
-            other: df.lazy(), // Here we convert dataframe to lazy but we should be able to support already lazy and not lazy
+            other: self.other,
             how: join_type,
         })
     }

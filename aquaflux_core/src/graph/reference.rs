@@ -287,6 +287,7 @@ mod tests {
                 instructions: Vec::new(),
                 name: Some(format!("section_{index}")),
                 input_ref: Some(input.into()),
+                secondary_input_refs: None,
                 output_ref: Some(output.into()),
             },
         }

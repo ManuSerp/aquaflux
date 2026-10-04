@@ -1,3 +1,4 @@
+use crate::graph::NamedFrame;
 use crate::interface;
 use crate::pipeline::{self, IntoLazy, LazyExecutable};
 use pyo3::prelude::*;
@@ -22,6 +23,7 @@ pub struct CompiledSection {
     pub instructions: Vec<pipeline::Op>,
     pub name: Option<String>,
     pub input_ref: Option<String>,
+    pub secondary_input_refs: Option<Vec<String>>,
     pub output_ref: Option<String>,
 }
 
@@ -39,6 +41,7 @@ impl CompiledSection {
         &self,
         py: Python<'py>,
         data: &Bound<'py, PyAny>,
+        secondary_data: Option<Vec<NamedFrame>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let df = pipeline::dataframe::from_python(data)?;
 
@@ -48,7 +51,7 @@ impl CompiledSection {
         // Execute all operations on the LazyFrame
         for op in &self.instructions {
             lf = op
-                .execute_lazy(lf)
+                .execute_lazy(lf, secondary_data.clone()) // TODO: clone not optimal
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
         }
 
@@ -76,6 +79,7 @@ pub fn compile_pipeline(_py: Python, ops: Vec<Bound<'_, PyAny>>) -> PyResult<Com
         instructions,
         name: None,
         input_ref: None,
+        secondary_input_refs: None,
         output_ref: None,
     })
 }

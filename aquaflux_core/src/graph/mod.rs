@@ -178,11 +178,26 @@ impl CompiledExecutionGraph {
                         "Section {section_index}: output '{output_name}' already exists"
                     ));
                 }
+                let mut secondary_plans = Vec::new();
+                for secondary_input_name in
+                    section.secondary_input_refs.as_deref().unwrap_or_default()
+                {
+                    // get plan from secondary_input_name
+                    let ref_id = reference_id(secondary_input_name)?;
+                    let plan = plans[ref_id].clone();
 
+                    secondary_plans.push(NamedFrame {
+                        data: plan.unwrap(),
+                        name: secondary_input_name.to_string(),
+                    }); // TODO add some checks here
+                }
+                // todo load plan from secondary_plans from the refs: THAT ALSO MEANS THE CURRENT TOPOLOGICAL ALGO IS WRONGAS IT DIDNT TOOK INTO ACCOUNT SECONDARY INPUTS FOR dependencies
                 for (op_index, op) in section.instructions.iter().enumerate() {
-                    plan = op.execute_lazy(plan, None).map_err(|err| {
-                        format!("Section {section_index}, operation {op_index}: {err}")
-                    })?;
+                    plan = op
+                        .execute_lazy(plan, Some(secondary_plans.clone()))
+                        .map_err(|err| {
+                            format!("Section {section_index}, operation {op_index}: {err}")
+                        })?;
                 }
 
                 plans[output_id] = Some(plan);
@@ -278,9 +293,9 @@ impl CompiledExecutionGraph {
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct NamedFrame {
-    data: LazyFrame,
+    pub data: LazyFrame,
     #[pyo3(get)]
-    name: String,
+    pub name: String,
 }
 
 impl NamedFrame {
