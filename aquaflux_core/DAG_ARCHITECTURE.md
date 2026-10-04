@@ -94,6 +94,14 @@ Section(
 
 Operations remain ordered inside a section. The compiler may order sections, but it must not silently reorder source-level operations inside a section. Polars may still optimize the resulting lazy plan.
 
+### Primary and secondary input references
+
+A section declares its primary `input_ref` and any `secondary_input_refs` when the section is created. The primary reference supplies the starting dataset for the section's ordered operation chain. Secondary references declare additional datasets consumed by operations such as the right-hand side of a reference-based join. Section compilation validates that each operation's auxiliary references are declared.
+
+Once sections are compiled into an execution graph, references are handled uniformly for dependency discovery, topological ordering, and the graph's required input contract. A reference produced by another section creates a normal producer-to-consumer dependency; a reference with no internal producer is an external graph input. Callers provide each required external dataset once by its name and do not need to classify it as primary or secondary.
+
+At execution time, the graph resolves references from its named reference store. A section still starts from its primary plan, while named secondary plans are made available to the operations that consume them. The primary/secondary distinction describes how a section uses its inputs; it does not create separate kinds of graph-level dataset references.
+
 ## Execution graph
 
 Sections form a dependency graph through their references.
