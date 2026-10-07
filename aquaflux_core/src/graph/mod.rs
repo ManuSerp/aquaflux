@@ -8,7 +8,6 @@ use std::sync::Arc;
 pub mod reference;
 pub mod section;
 
-
 // TODO Next branch steps (see DAG_ARCHITECTURE.md):
 // 1. Build an ExecutionGraph compiler around the existing sections, accepting
 //    multiple sections and requested output references. Decide external input
@@ -114,7 +113,12 @@ pub struct CompiledExecutionGraph {
 }
 
 impl CompiledExecutionGraph {
-    pub fn apply_plan(&self, inputs: Vec<FramedReference>) -> Result<Vec<FramedReference>, String> {
+    pub fn apply_plan(
+        &self,
+        inputs: Vec<FramedReference>,
+        extra_outputs: Option<Vec<String>>,
+    ) -> Result<Vec<FramedReference>, String> {
+        // TODO seems like the qpply could be done at compile time
         let table = &self.graph.ref_table;
         // Slots share the reference table's indices and retain plans for branching.
         let mut plans: Vec<Option<LazyFrame>> = vec![None; table.references.len()];
@@ -210,8 +214,11 @@ impl CompiledExecutionGraph {
                 plans[output_id] = Some(plan);
             }
         }
-        // TODO use the fact that we have the plan for intermediate value for debug mod
-        self.output_refs
+        let merged_outputs: Vec<String> = match extra_outputs {
+            Some(extra) => [self.output_refs.as_slice(), extra.as_slice()].concat(),
+            None => self.output_refs.clone(),
+        };
+        merged_outputs
             .iter()
             .map(|name| {
                 let id = reference_id(name)?;
@@ -232,10 +239,12 @@ impl CompiledExecutionGraph {
 #[pymethods]
 impl CompiledExecutionGraph {
     /// Execute named inputs and return Polars DataFrames in output_refs order.
+    #[pyo3(signature = (input_data, optional_extra_outputs=None))]
     pub fn execute<'py>(
         &self,
         py: Python<'py>,
         input_data: Vec<NamedFrame>, //Can this be variadic ?
+        optional_extra_outputs: Option<Vec<String>>,
     ) -> PyResult<Vec<Bound<'py, PyAny>>> {
         // first created NamedReference from named frame
         // we also need a check that ref table was builded (need to be the case to get that struct)
@@ -265,11 +274,13 @@ impl CompiledExecutionGraph {
             }
         }
         // build plan
-        let output_plan = self.apply_plan(input_refs).map_err(|err| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "Failed to apply execution plan: {err}"
-            ))
-        })?;
+        let output_plan = self
+            .apply_plan(input_refs, optional_extra_outputs)
+            .map_err(|err| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Failed to apply execution plan: {err}"
+                ))
+            })?;
         // resolve the plan with polars and materialize output
         // Workers may need the GIL to release Python-owned input buffers.
         let resolved = py
@@ -379,18 +390,21 @@ mod tests {
         let compiled = graph.compile().unwrap();
         assert_eq!(compiled.input_refs, vec!["raw_orders", "raw_customers"]);
         let outputs = compiled
-            .apply_plan(vec![
-                input(
-                    &compiled,
-                    "raw_orders",
-                    df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
-                ),
-                input(
-                    &compiled,
-                    "raw_customers",
-                    df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
-                ),
-            ])
+            .apply_plan(
+                vec![
+                    input(
+                        &compiled,
+                        "raw_orders",
+                        df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
+                    ),
+                    input(
+                        &compiled,
+                        "raw_customers",
+                        df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
+                    ),
+                ],
+                None,
+            )
             .unwrap();
         assert_join_result(outputs);
     }
@@ -415,18 +429,21 @@ mod tests {
         assert_eq!(compiled.input_refs, vec!["orders", "raw_customers"]);
         assert_eq!(compiled.output_refs, vec!["joined"]);
         let outputs = compiled
-            .apply_plan(vec![
-                input(
-                    &compiled,
-                    "orders",
-                    df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
-                ),
-                input(
-                    &compiled,
-                    "raw_customers",
-                    df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
-                ),
-            ])
+            .apply_plan(
+                vec![
+                    input(
+                        &compiled,
+                        "orders",
+                        df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
+                    ),
+                    input(
+                        &compiled,
+                        "raw_customers",
+                        df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
+                    ),
+                ],
+                None,
+            )
             .unwrap();
         assert_join_result(outputs);
     }
@@ -440,18 +457,21 @@ mod tests {
         let compiled = graph.compile().unwrap();
         assert_eq!(compiled.input_refs, vec!["orders", "customers"]);
         let outputs = compiled
-            .apply_plan(vec![
-                input(
-                    &compiled,
-                    "customers",
-                    df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
-                ),
-                input(
-                    &compiled,
-                    "orders",
-                    df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
-                ),
-            ])
+            .apply_plan(
+                vec![
+                    input(
+                        &compiled,
+                        "customers",
+                        df!("id" => [2i64, 3], "value" => [200i64, 300]).unwrap(),
+                    ),
+                    input(
+                        &compiled,
+                        "orders",
+                        df!("id" => [1i64, 2], "amount" => [10i64, 20]).unwrap(),
+                    ),
+                ],
+                None,
+            )
             .unwrap();
         assert_join_result(outputs);
     }
@@ -463,11 +483,10 @@ mod tests {
         );
         let compiled = graph.compile().unwrap();
         let error = compiled
-            .apply_plan(vec![input(
-                &compiled,
-                "orders",
-                df!("id" => [1i64]).unwrap(),
-            )])
+            .apply_plan(
+                vec![input(&compiled, "orders", df!("id" => [1i64]).unwrap())],
+                None,
+            )
             .err()
             .expect("missing secondary input must be rejected");
         assert_eq!(error, "Missing input 'customers'");
@@ -484,10 +503,13 @@ mod tests {
         graph.execution_layers = vec![vec![0], vec![1]];
         let compiled = Arc::new(graph).compile().unwrap();
         let error = compiled
-            .apply_plan(vec![
-                input(&compiled, "orders", df!("id" => [1i64]).unwrap()),
-                input(&compiled, "raw_customers", df!("id" => [1i64]).unwrap()),
-            ])
+            .apply_plan(
+                vec![
+                    input(&compiled, "orders", df!("id" => [1i64]).unwrap()),
+                    input(&compiled, "raw_customers", df!("id" => [1i64]).unwrap()),
+                ],
+                None,
+            )
             .err()
             .expect("unavailable secondary plan must return an error, not panic");
         assert_eq!(
