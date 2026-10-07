@@ -27,6 +27,7 @@ fn aquaflux_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<interface::graph::PyExecutionGraph>()?;
     m.add_class::<graph::CompiledExecutionGraph>()?;
     m.add_class::<graph::NamedFrame>()?;
+    m.add_class::<graph::ResultFrame>()?;
 
     Ok(())
 }

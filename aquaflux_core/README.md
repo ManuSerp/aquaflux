@@ -76,7 +76,7 @@ filter_orders.output_ref = "high_value"
 graph = aquaflux.ExecutionGraph([filter_orders, clean])
 compiled = graph.compile()
 frames = compiled.execute([aquaflux.NamedFrame(test_data, "orders")])
-results = dict(zip(compiled.output_refs, frames))
+results = {result.name: result.data for result in frames}
 print(results["high_value"])
 ```
 
@@ -84,8 +84,10 @@ Every graph section must have an `input_ref` and `output_ref`. Compilation infer
 external `input_refs` and terminal `output_refs` (outputs not consumed by another
 section); both properties are read-only. `NamedFrame(data, name)` accepts Pandas
 or Polars DataFrames. `execute` takes a list of named frames and returns a list
-of Polars DataFrames in `output_refs` order. Both the graph and compiled object
-can be reused without consuming their sections or inputs.
+of `ResultFrame` objects with read-only `name` and `data` properties; `data` is a
+Polars DataFrame. Results follow `output_refs` order, followed by any optional
+extra outputs. Both the graph and compiled object can be reused without
+consuming their sections or inputs.
 
 See `test_pipeline.py` for a branching graph with a shared intermediate and two
 outputs. Reference-based joins and selecting intermediate outputs are not yet

@@ -246,7 +246,8 @@ impl CompiledExecutionGraph {
 
 #[pymethods]
 impl CompiledExecutionGraph {
-    /// Execute named inputs and return Polars DataFrames in output_refs order.
+    /// Execute named inputs and return named ResultFrame objects containing Polars DataFrames.
+    /// Results follow output_refs order, followed by any optional extra outputs.
     /// TODO: optional_extra_outputs is here but mqybe it would have been better to qhve thqt in compile fn args
     /// so this one and apply plan keep generics and Compiledgraph output_refs atrributes  automatically contains the extra outputs
     #[pyo3(signature = (input_data, optional_extra_outputs=None))]
@@ -255,7 +256,7 @@ impl CompiledExecutionGraph {
         py: Python<'py>,
         input_data: Vec<NamedFrame>, //Can this be variadic ?
         optional_extra_outputs: Option<Vec<String>>,
-    ) -> PyResult<Vec<Bound<'py, PyAny>>> {
+    ) -> PyResult<Vec<ResultFrame>> {
         // first created NamedReference from named frame
         // we also need a check that ref table was builded (need to be the case to get that struct)
         let mut input_refs: Vec<FramedReference> = Vec::new();
@@ -291,6 +292,11 @@ impl CompiledExecutionGraph {
                     "Failed to apply execution plan: {err}"
                 ))
             })?;
+        //TODO feels like a Framed reference could yield a ResultFrame directly, but we need to collect the plan first to get the output names
+        let output_names: Vec<String> = output_plan
+            .iter()
+            .map(|fr| fr.reference.name.clone())
+            .collect();
         // resolve the plan with polars and materialize output
         // Workers may need the GIL to release Python-owned input buffers.
         let resolved = py
@@ -312,9 +318,23 @@ impl CompiledExecutionGraph {
 
         resolved
             .into_iter()
-            .map(|df| to_python(py, df))
+            .zip(output_names)
+            .map(|(df, name)| {
+                Ok(ResultFrame {
+                    data: to_python(py, df)?.unbind(),
+                    name,
+                })
+            })
             .collect::<PyResult<Vec<_>>>()
     }
+}
+
+#[pyclass]
+pub struct ResultFrame {
+    #[pyo3(get)]
+    pub data: Py<PyAny>,
+    #[pyo3(get)]
+    pub name: String,
 }
 
 // this will probably go to interface

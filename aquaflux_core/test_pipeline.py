@@ -322,10 +322,22 @@ for executable_graph in (compiled_graph, graph.compile()):
             graph_results = executable_graph.execute([named_orders])
             assert isinstance(graph_results, list)
             assert len(graph_results) == len(executable_graph.output_refs)
-            for ref, frame in zip(executable_graph.output_refs, graph_results):
-                assert isinstance(frame, polars.DataFrame)
-                assert frame.columns == ["customer", "amount"]
-                assert frame.rows() == expected_graph_rows[ref]
+            for ref, result in zip(executable_graph.output_refs, graph_results):
+                assert isinstance(result, aquaflux.ResultFrame)
+                assert result.name == ref
+                assert isinstance(result.data, polars.DataFrame)
+                assert result.data.columns == ["customer", "amount"]
+                assert result.data.rows() == expected_graph_rows[result.name]
+
+extra_results = compiled_graph.execute(
+    [aquaflux.NamedFrame(polars.DataFrame(graph_data), "orders")],
+    optional_extra_outputs=["cleaned", "high_value"],
+)
+assert [result.name for result in extra_results] == compiled_graph.output_refs + ["cleaned"]
+assert all(isinstance(result, aquaflux.ResultFrame) for result in extra_results)
+assert extra_results[-1].data.rows() == [
+    ("Alice", 100.0), ("Bob", 300.0), ("Charlie", 200.0),
+]
 
 
 def assert_graph_error(action, error_type=Exception):
@@ -453,7 +465,7 @@ example_graph = aquaflux.ExecutionGraph([
 example_frames = example_graph.execute([
     aquaflux.NamedFrame(example_orders, "orders"),
 ])
-example_results = dict(zip(example_graph.output_refs, example_frames))
+example_results = {result.name: result.data for result in example_frames}
 
 print("\nCustomer sales leaderboard (all orders, grouped by customer):")
 print(example_results["customer_sales"])
@@ -566,7 +578,7 @@ multi_frames = multi_graph.execute([
     aquaflux.NamedFrame(multi_orders, "orders"),
 ])
 assert len(multi_frames) == 2
-multi_results = dict(zip(multi_graph.output_refs, multi_frames))
+multi_results = {result.name: result.data for result in multi_frames}
 assert multi_results["regional_sales"].columns == ["region", "total_sales", "items_sold"]
 assert multi_results["regional_sales"].rows() == [
     ("North", 40.0, 3),
