@@ -155,7 +155,6 @@ impl CompiledExecutionGraph {
             }
         }
         // execute the sections in topological order, building plans for each output reference
-        // TODO adapt the logic to support multiple inputs
         for layer in &self.graph.execution_layers {
             for &section_index in layer {
                 let section = &self.graph.sections[section_index].section;
@@ -215,7 +214,16 @@ impl CompiledExecutionGraph {
             }
         }
         let merged_outputs: Vec<String> = match extra_outputs {
-            Some(extra) => [self.output_refs.as_slice(), extra.as_slice()].concat(),
+            Some(extra) => {
+                let mut outputs = Vec::new();
+                for name in self.output_refs.iter().chain(extra.iter()) {
+                    if !outputs.contains(name) {
+                        outputs.push(name.clone());
+                    }
+                }
+                outputs
+            }
+
             None => self.output_refs.clone(),
         };
         merged_outputs
@@ -239,6 +247,8 @@ impl CompiledExecutionGraph {
 #[pymethods]
 impl CompiledExecutionGraph {
     /// Execute named inputs and return Polars DataFrames in output_refs order.
+    /// TODO: optional_extra_outputs is here but mqybe it would have been better to qhve thqt in compile fn args
+    /// so this one and apply plan keep generics and Compiledgraph output_refs atrributes  automatically contains the extra outputs
     #[pyo3(signature = (input_data, optional_extra_outputs=None))]
     pub fn execute<'py>(
         &self,
