@@ -146,7 +146,19 @@ inferred input, even when requesting only an intermediate as an extra.
 
 Both the graph and compiled object can be reused without consuming their
 sections or inputs. See `test_pipeline.py` for branching graphs with shared
-intermediates and multiple outputs.
+intermediates and multiple outputs, independent named inputs, and reuse after
+failed executions.
+
+Graph construction/lowering errors raise `ValueError`; lowering diagnostics
+include the original zero-based section index, its name when set, and the
+zero-based operation index. Missing or duplicate required inputs and lazy
+collection failures raise `RuntimeError`, with input or column context;
+unexpected named inputs raise `ValueError`. A collection failure does not
+prevent reusing the compiled graph with valid inputs.
+
+See [MAN-38 validation](MAN38_VALIDATION.md) for the tested revision,
+environment, commands, and local results. PR CI installs a newly built wheel
+before running `test_pipeline.py`.
 
 ### Reference-based joins
 

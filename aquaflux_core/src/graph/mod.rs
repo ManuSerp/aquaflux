@@ -59,7 +59,14 @@ impl ExecutionGraph {
                 section
                     .compile()
                     .map(|section| IndexedSection { index: i, section })
-                    .map_err(|err| err.to_string())
+                    .map_err(|err| {
+                        let name = section
+                            .name
+                            .as_deref()
+                            .map(|name| format!(" ('{name}')"))
+                            .unwrap_or_default();
+                        format!("Section {i}{name}: lowering failed: {err}")
+                    })
             })
             .collect::<Result<Vec<_>, String>>()?;
         // reference table:
@@ -414,6 +421,85 @@ mod tests {
     }
 
     #[test]
+    fn lowering_preserves_ordered_transformations() {
+        let mut ordered = section("source", "result", None);
+        ordered.instructions = vec![
+            PyOp::Rename(PyRenameOp::new(
+                vec!["value".into()],
+                vec!["renamed".into()],
+            )),
+            PyOp::Select(PySelectOp::new(vec!["renamed".into()])),
+            PyOp::Rename(PyRenameOp::new(
+                vec!["renamed".into()],
+                vec!["final".into()],
+            )),
+        ];
+        let compiled = Arc::new(ExecutionGraph::new(vec![ordered]).unwrap())
+            .compile()
+            .unwrap();
+        let outputs = compiled
+            .apply_plan(
+                vec![input(
+                    &compiled,
+                    "source",
+                    df!("value" => [20i64, 10], "unused" => [0i64, 0]).unwrap(),
+                )],
+                None,
+            )
+            .unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].reference.name, "result");
+        let result = outputs
+            .into_iter()
+            .next()
+            .unwrap()
+            .lazyframe
+            .collect()
+            .unwrap()
+            .sort(["final"], SortMultipleOptions::default())
+            .unwrap();
+        assert!(result.equals(&df!("final" => [10i64, 20]).unwrap()));
+    }
+
+    #[test]
+    fn lowering_error_reports_original_section_and_operation_indices() {
+        Python::initialize();
+        let mut invalid = section("intermediate", "result", Some("customers"));
+        invalid.name = Some("bad_lowering".into());
+        invalid
+            .instructions
+            .insert(0, PyOp::Select(PySelectOp::new(vec!["id".into()])));
+        let PyOp::Join(join) = &mut invalid.instructions[1] else {
+            panic!("expected a join");
+        };
+        join.how = "invalid".into();
+        let error = ExecutionGraph::new(vec![section("source", "intermediate", None), invalid])
+            .err()
+            .expect("invalid join type must fail lowering");
+        assert_eq!(
+            error,
+            "Section 1 ('bad_lowering'): lowering failed: ValueError: operation 1: ValueError: Unknown join type: 'invalid'. Expected one of: inner, left, right, outer, full, cross"
+        );
+    }
+
+    #[test]
+    fn lowering_error_reports_missing_secondary_declaration() {
+        Python::initialize();
+        let mut invalid = section("intermediate", "result", Some("customers"));
+        invalid
+            .instructions
+            .insert(0, PyOp::Select(PySelectOp::new(vec!["id".into()])));
+        invalid.secondary_input_refs = None;
+        let error = ExecutionGraph::new(vec![section("source", "intermediate", None), invalid])
+            .err()
+            .expect("undeclared secondary reference must fail lowering");
+        assert_eq!(
+            error,
+            "Section 1: lowering failed: ValueError: secondary_input_refs does not contain needed refs: operation 1: customers"
+        );
+    }
+
+    #[test]
     fn extra_outputs_preserve_names_plans_order_and_deduplicate() {
         let compiled = extra_output_graph();
         let cases = [
@@ -467,6 +553,26 @@ mod tests {
             }
             assert_eq!(compiled.output_refs, vec!["C"]);
         }
+    }
+
+    #[test]
+    fn section_plan_errors_precede_unknown_extra_output_resolution() {
+        let mut compiled = extra_output_graph();
+        // A broken schedule makes plan building fail before resolving extras.
+        Arc::get_mut(&mut compiled.graph).unwrap().execution_layers =
+            vec![vec![2], vec![0], vec![1]];
+        let error = compiled
+            .apply_plan(
+                vec![input(
+                    &compiled,
+                    "source",
+                    df!("id" => [1i64], "value" => [10i64]).unwrap(),
+                )],
+                Some(vec!["unknown_extra".into()]),
+            )
+            .err()
+            .expect("section plan error must precede output resolution");
+        assert_eq!(error, "Section 2: input 'B' is not available");
     }
 
     #[test]
