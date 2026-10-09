@@ -340,6 +340,71 @@ assert extra_results[-1].data.rows() == [
 ]
 
 
+# MAN-38: source -> A -> B -> C, with a distinct schema at every stage.
+print("\n--- Extra Output Contract Test ---")
+extra_a = aquaflux.Section([
+    aquaflux.SelectOp(["id", "value"]),
+    aquaflux.RenameOp(["value"], ["a"]),
+])
+extra_a.input_ref = "source"
+extra_a.output_ref = "A"
+extra_b = aquaflux.Section([
+    aquaflux.SelectOp(["a"]),
+    aquaflux.RenameOp(["a"], ["b"]),
+])
+extra_b.input_ref = "A"
+extra_b.output_ref = "B"
+extra_c = aquaflux.Section([aquaflux.RenameOp(["b"], ["c"])])
+extra_c.input_ref = "B"
+extra_c.output_ref = "C"
+extra_compiled = aquaflux.ExecutionGraph([extra_a, extra_b, extra_c]).compile()
+extra_source = aquaflux.NamedFrame(polars.DataFrame({
+    "id": [2, 1], "value": [20, 10], "unused": [0, 0],
+}), "source")
+extra_expected = {
+    "A": polars.DataFrame({"id": [1, 2], "a": [10, 20]}),
+    "B": polars.DataFrame({"b": [10, 20]}),
+    "C": polars.DataFrame({"c": [10, 20]}),
+}
+extra_default_refs = extra_compiled.output_refs.copy()
+assert extra_default_refs == ["C"]
+for extras, expected_names in (
+    (None, ["C"]),
+    ([], ["C"]),
+    (["A"], ["C", "A"]),
+    (["B", "A"], ["C", "B", "A"]),
+    (["A", "A"], ["C", "A"]),
+    (["C", "A", "C", "A"], ["C", "A"]),
+    (None, ["C"]),
+):
+    frames = extra_compiled.execute([extra_source], optional_extra_outputs=extras)
+    assert [result.name for result in frames] == expected_names
+    assert len(frames) == len(set(expected_names))
+    for result in frames:
+        assert isinstance(result, aquaflux.ResultFrame)
+        assert isinstance(result.data, polars.DataFrame)
+        expected = extra_expected[result.name]
+        assert result.data.columns == expected.columns
+        assert result.data.schema == expected.schema
+        assert result.data.sort(expected.columns[0]).rows() == expected.rows()
+    results = {result.name: result.data for result in frames}
+    assert list(results) == expected_names
+    assert results["C"].sort("c").equals(extra_expected["C"])
+    assert extra_compiled.output_refs == extra_default_refs
+
+try:
+    extra_compiled.execute([extra_source], optional_extra_outputs=["unknown_extra"])
+except RuntimeError as error:
+    assert "unknown_extra" in str(error)
+else:
+    raise AssertionError("Expected RuntimeError for unknown_extra")
+assert extra_compiled.output_refs == extra_default_refs
+no_extra_frames = extra_compiled.execute([extra_source])
+assert [result.name for result in no_extra_frames] == ["C"]
+assert no_extra_frames[0].data.sort("c").equals(extra_expected["C"])
+print("Extra output contract assertions passed")
+
+
 def assert_graph_error(action, error_type=Exception):
     # Catch Python errors only: a native panic must not pass a negative check.
     try:

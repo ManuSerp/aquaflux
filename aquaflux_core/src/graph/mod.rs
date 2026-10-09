@@ -364,7 +364,7 @@ impl NamedFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interface::{PyJoinOp, PyOp};
+    use crate::interface::{PyJoinOp, PyOp, PyRenameOp, PySelectOp};
     use polars::prelude::*;
 
     fn section(input: &str, output: &str, secondary: Option<&str>) -> PySection {
@@ -390,6 +390,100 @@ mod tests {
             reference: graph.graph.ref_table.get_ref(name).unwrap().clone(),
             lazyframe: data.lazy(),
         }
+    }
+
+    fn extra_output_graph() -> CompiledExecutionGraph {
+        let mut a = section("source", "A", None);
+        a.instructions = vec![
+            PyOp::Select(PySelectOp::new(vec!["id".into(), "value".into()])),
+            PyOp::Rename(PyRenameOp::new(vec!["value".into()], vec!["a".into()])),
+        ];
+        let mut b = section("A", "B", None);
+        b.instructions = vec![
+            PyOp::Select(PySelectOp::new(vec!["a".into()])),
+            PyOp::Rename(PyRenameOp::new(vec!["a".into()], vec!["b".into()])),
+        ];
+        let mut c = section("B", "C", None);
+        c.instructions = vec![PyOp::Rename(PyRenameOp::new(
+            vec!["b".into()],
+            vec!["c".into()],
+        ))];
+        Arc::new(ExecutionGraph::new(vec![a, b, c]).unwrap())
+            .compile()
+            .unwrap()
+    }
+
+    #[test]
+    fn extra_outputs_preserve_names_plans_order_and_deduplicate() {
+        let compiled = extra_output_graph();
+        let cases = [
+            (None, vec!["C"]),
+            (Some(vec![]), vec!["C"]),
+            (Some(vec!["A"]), vec!["C", "A"]),
+            (Some(vec!["B", "A"]), vec!["C", "B", "A"]),
+            (Some(vec!["A", "A"]), vec!["C", "A"]),
+            (Some(vec!["C", "A", "C", "A"]), vec!["C", "A"]),
+            (None, vec!["C"]),
+        ];
+        for (extras, expected_names) in cases {
+            let outputs = compiled
+                .apply_plan(
+                    vec![input(
+                        &compiled,
+                        "source",
+                        df!("id" => [2i64, 1], "value" => [20i64, 10], "unused" => [0i64, 0])
+                            .unwrap(),
+                    )],
+                    extras.map(|names| names.into_iter().map(str::to_owned).collect()),
+                )
+                .unwrap();
+            assert_eq!(
+                outputs
+                    .iter()
+                    .map(|output| output.reference.name.as_str())
+                    .collect::<Vec<_>>(),
+                expected_names
+            );
+            for output in outputs {
+                let expected = match output.reference.name.as_str() {
+                    "A" => df!("id" => [1i64, 2], "a" => [10i64, 20]).unwrap(),
+                    "B" => df!("b" => [10i64, 20]).unwrap(),
+                    "C" => df!("c" => [10i64, 20]).unwrap(),
+                    name => panic!("unexpected output {name}"),
+                };
+                let result = output.lazyframe.collect().unwrap();
+                assert_eq!(result.schema(), expected.schema());
+                let result = result
+                    .sort(
+                        [expected.get_column_names()[0].as_str()],
+                        SortMultipleOptions::default(),
+                    )
+                    .unwrap();
+                assert!(
+                    result.equals(&expected),
+                    "incorrect plan for {}: {result:?}",
+                    output.reference.name
+                );
+            }
+            assert_eq!(compiled.output_refs, vec!["C"]);
+        }
+    }
+
+    #[test]
+    fn unknown_extra_output_reports_the_reference_name() {
+        let compiled = extra_output_graph();
+        let error = compiled
+            .apply_plan(
+                vec![input(
+                    &compiled,
+                    "source",
+                    df!("id" => [1i64], "value" => [10i64]).unwrap(),
+                )],
+                Some(vec!["unknown_extra".into()]),
+            )
+            .err()
+            .expect("unknown extra output must be rejected");
+        assert!(error.contains("unknown_extra"), "{error}");
     }
 
     fn assert_join_result(outputs: Vec<FramedReference>) {
