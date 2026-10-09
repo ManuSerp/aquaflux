@@ -322,18 +322,96 @@ for executable_graph in (compiled_graph, graph.compile()):
             graph_results = executable_graph.execute([named_orders])
             assert isinstance(graph_results, list)
             assert len(graph_results) == len(executable_graph.output_refs)
-            for ref, frame in zip(executable_graph.output_refs, graph_results):
-                assert isinstance(frame, polars.DataFrame)
-                assert frame.columns == ["customer", "amount"]
-                assert frame.rows() == expected_graph_rows[ref]
+            for ref, result in zip(executable_graph.output_refs, graph_results):
+                assert isinstance(result, aquaflux.ResultFrame)
+                assert result.name == ref
+                assert isinstance(result.data, polars.DataFrame)
+                assert result.data.columns == ["customer", "amount"]
+                assert result.data.rows() == expected_graph_rows[result.name]
+
+extra_results = compiled_graph.execute(
+    [aquaflux.NamedFrame(polars.DataFrame(graph_data), "orders")],
+    optional_extra_outputs=["cleaned", "high_value"],
+)
+assert [result.name for result in extra_results] == compiled_graph.output_refs + ["cleaned"]
+assert all(isinstance(result, aquaflux.ResultFrame) for result in extra_results)
+assert extra_results[-1].data.rows() == [
+    ("Alice", 100.0), ("Bob", 300.0), ("Charlie", 200.0),
+]
 
 
-def assert_graph_error(action, error_type=Exception):
-    # Catch Python errors only: a native panic must not pass a negative check.
+# MAN-38: source -> A -> B -> C, with a distinct schema at every stage.
+print("\n--- Extra Output Contract Test ---")
+extra_a = aquaflux.Section([
+    aquaflux.SelectOp(["id", "value"]),
+    aquaflux.RenameOp(["value"], ["a"]),
+])
+extra_a.input_ref = "source"
+extra_a.output_ref = "A"
+extra_b = aquaflux.Section([
+    aquaflux.SelectOp(["a"]),
+    aquaflux.RenameOp(["a"], ["b"]),
+])
+extra_b.input_ref = "A"
+extra_b.output_ref = "B"
+extra_c = aquaflux.Section([aquaflux.RenameOp(["b"], ["c"])])
+extra_c.input_ref = "B"
+extra_c.output_ref = "C"
+extra_compiled = aquaflux.ExecutionGraph([extra_a, extra_b, extra_c]).compile()
+extra_source = aquaflux.NamedFrame(polars.DataFrame({
+    "id": [2, 1], "value": [20, 10], "unused": [0, 0],
+}), "source")
+extra_expected = {
+    "A": polars.DataFrame({"id": [1, 2], "a": [10, 20]}),
+    "B": polars.DataFrame({"b": [10, 20]}),
+    "C": polars.DataFrame({"c": [10, 20]}),
+}
+extra_default_refs = extra_compiled.output_refs.copy()
+assert extra_default_refs == ["C"]
+for extras, expected_names in (
+    (None, ["C"]),
+    ([], ["C"]),
+    (["A"], ["C", "A"]),
+    (["B", "A"], ["C", "B", "A"]),
+    (["A", "A"], ["C", "A"]),
+    (["C", "A", "C", "A"], ["C", "A"]),
+    (None, ["C"]),
+):
+    frames = extra_compiled.execute([extra_source], optional_extra_outputs=extras)
+    assert [result.name for result in frames] == expected_names
+    assert len(frames) == len(set(expected_names))
+    for result in frames:
+        assert isinstance(result, aquaflux.ResultFrame)
+        assert isinstance(result.data, polars.DataFrame)
+        expected = extra_expected[result.name]
+        assert result.data.columns == expected.columns
+        assert result.data.schema == expected.schema
+        assert result.data.sort(expected.columns[0]).rows() == expected.rows()
+    results = {result.name: result.data for result in frames}
+    assert list(results) == expected_names
+    assert results["C"].sort("c").equals(extra_expected["C"])
+    assert extra_compiled.output_refs == extra_default_refs
+
+try:
+    extra_compiled.execute([extra_source], optional_extra_outputs=["unknown_extra"])
+except RuntimeError as error:
+    assert "unknown_extra" in str(error)
+else:
+    raise AssertionError("Expected RuntimeError for unknown_extra")
+assert extra_compiled.output_refs == extra_default_refs
+no_extra_frames = extra_compiled.execute([extra_source])
+assert [result.name for result in no_extra_frames] == ["C"]
+assert no_extra_frames[0].data.sort("c").equals(extra_expected["C"])
+print("Extra output contract assertions passed")
+
+
+def assert_graph_error(action, error_type, *message_parts):
+    # Match the public error type and stable context, not full Polars diagnostics.
     try:
         action()
-    except error_type:
-        pass
+    except error_type as error:
+        for part in message_parts:
+            assert part in str(error), f"Missing {part!r} in {error!r}"
     else:
         raise AssertionError(f"Expected {error_type.__name__}")
 
@@ -343,11 +421,19 @@ for attribute in ("input_refs", "output_refs"):
 
 named_orders = aquaflux.NamedFrame(polars.DataFrame(graph_data), "orders")
 unexpected_orders = aquaflux.NamedFrame(polars.DataFrame(graph_data), "unexpected")
-assert_graph_error(lambda: compiled_graph.execute([]))
-assert_graph_error(lambda: compiled_graph.execute([named_orders, named_orders]))
-assert_graph_error(lambda: compiled_graph.execute([named_orders, unexpected_orders]))
-assert_graph_error(lambda: aquaflux.NamedFrame(object(), "orders"))
-assert_graph_error(lambda: compiled_graph.execute([object()]))
+assert_graph_error(
+    lambda: compiled_graph.execute([]), RuntimeError, "Missing input 'orders'"
+)
+assert_graph_error(
+    lambda: compiled_graph.execute([named_orders, named_orders]),
+    RuntimeError, "Duplicate input 'orders'",
+)
+assert_graph_error(
+    lambda: compiled_graph.execute([named_orders, unexpected_orders]),
+    ValueError, "Unexpected input 'unexpected'",
+)
+assert_graph_error(lambda: aquaflux.NamedFrame(object(), "orders"), TypeError, "DataFrame")
+assert_graph_error(lambda: compiled_graph.execute([object()]), TypeError, "NamedFrame")
 
 # Missing references are rejected by compile(), not by graph construction.
 for missing_ref in ("input_ref", "output_ref"):
@@ -358,7 +444,9 @@ for missing_ref in ("input_ref", "output_ref"):
     if missing_ref != "output_ref":
         incomplete.output_ref = "result"
     incomplete_graph = aquaflux.ExecutionGraph([incomplete])
-    assert_graph_error(incomplete_graph.compile, ValueError)
+    assert_graph_error(
+        incomplete_graph.compile, ValueError, "Section 0", "no", missing_ref.removesuffix("_ref")
+    )
 
 # Duplicate producers and cycles may be rejected during graph construction.
 duplicate = aquaflux.Section([aquaflux.SelectOp(["amount"])])
@@ -366,7 +454,8 @@ duplicate.name = "duplicate_producer"
 duplicate.input_ref = "orders"
 duplicate.output_ref = "cleaned"
 assert_graph_error(
-    lambda: aquaflux.ExecutionGraph([clean_orders, duplicate]).compile(), ValueError
+    lambda: aquaflux.ExecutionGraph([clean_orders, duplicate]).compile(),
+    ValueError, "cleaned", "duplicate producer section 1", "duplicate_producer",
 )
 
 cycle = aquaflux.Section([aquaflux.SelectOp(["amount"])])
@@ -374,10 +463,119 @@ cycle.name = "cycle"
 cycle.input_ref = "cleaned"
 cycle.output_ref = "orders"
 assert_graph_error(
-    lambda: aquaflux.ExecutionGraph([clean_orders, cycle]).compile(), ValueError
+    lambda: aquaflux.ExecutionGraph([clean_orders, cycle]).compile(),
+    ValueError, "Cycle detected", "sections", "orders", "cleaned",
+)
+
+# Invalid operation lowering reports original section and operation positions.
+bad_lowering = aquaflux.Section([
+    aquaflux.SelectOp(["id"]),
+    aquaflux.JoinOp(left_on=["id"], right_on=["id"], other="customers", how="invalid"),
+])
+bad_lowering.name = "bad_lowering"
+bad_lowering.input_ref = "orders"
+bad_lowering.output_ref = "bad_result"
+bad_lowering.secondary_input_refs = ["customers"]
+assert_graph_error(
+    lambda: aquaflux.ExecutionGraph([clean_orders, bad_lowering]),
+    ValueError, "Section 1", "bad_lowering", "operation 1", "Unknown join type", "invalid",
+)
+bad_lowering.instructions = [
+    aquaflux.SelectOp(["id"]),
+    aquaflux.JoinOp(left_on=["id"], right_on=["id"], other="customers", how="inner"),
+]
+bad_lowering.secondary_input_refs = []
+assert_graph_error(
+    lambda: aquaflux.ExecutionGraph([clean_orders, bad_lowering]),
+    ValueError, "Section 1", "bad_lowering", "operation 1", "customers", "secondary_input_refs",
 )
 
 print("ExecutionGraph assertions passed")
+
+
+# Independent named inputs: input_1 -> A -> C and input_2 -> B.
+# Renaming before casting/filtering also protects instruction ordering.
+isolated_a = aquaflux.Section([
+    aquaflux.SelectOp(["id", "value"]),
+    aquaflux.RenameOp(["value"], ["amount"]),
+    aquaflux.CastOp(["amount"], float),
+])
+isolated_a.input_ref = "input_1"
+isolated_a.output_ref = "A"
+isolated_b = aquaflux.Section([
+    aquaflux.SelectOp(["label", "count"]),
+    aquaflux.RenameOp(["count"], ["b_count"]),
+])
+isolated_b.input_ref = "input_2"
+isolated_b.output_ref = "B"
+isolated_c = aquaflux.Section([
+    aquaflux.FilterOp("amount", aquaflux.LogicalOp.Gt, 20.0),
+])
+isolated_c.input_ref = "A"
+isolated_c.output_ref = "C"
+isolated_graph = aquaflux.ExecutionGraph([isolated_c, isolated_b, isolated_a]).compile()
+assert set(isolated_graph.input_refs) == {"input_1", "input_2"}
+assert isolated_graph.output_refs == ["C", "B"]
+
+
+def isolation_inputs(values, counts):
+    return [
+        aquaflux.NamedFrame(polars.DataFrame({
+            "id": [2, 1], "value": values, "unused": [0, 0],
+        }), "input_1"),
+        aquaflux.NamedFrame(polars.DataFrame({
+            "label": ["y", "x"], "count": counts,
+        }), "input_2"),
+    ]
+
+
+def assert_isolated_run(inputs, c_rows, b_rows):
+    frames = isolated_graph.execute(inputs)
+    assert [result.name for result in frames] == ["C", "B"]
+    assert all(isinstance(result, aquaflux.ResultFrame) for result in frames)
+    results = {result.name: result.data for result in frames}
+    assert all(isinstance(data, polars.DataFrame) for data in results.values())
+    assert results["C"].columns == ["id", "amount"]
+    assert results["C"].schema == {"id": polars.Int64, "amount": polars.Float64}
+    assert results["C"].sort("id").rows() == c_rows
+    assert results["B"].columns == ["label", "b_count"]
+    assert results["B"].schema == {"label": polars.String, "b_count": polars.Int64}
+    assert results["B"].sort("label").rows() == b_rows
+    assert isolated_graph.output_refs == ["C", "B"]
+    return results
+
+
+first_inputs = isolation_inputs(["10", "30"], [7, 3])
+second_inputs = isolation_inputs(["90", "40"], [100, 200])
+first_run = assert_isolated_run(first_inputs, [(1, 30.0)], [("x", 3), ("y", 7)])
+assert_isolated_run(second_inputs, [(1, 40.0), (2, 90.0)], [("x", 200), ("y", 100)])
+# Requesting A does not remove the independent B branch or its required input.
+assert_graph_error(
+    lambda: isolated_graph.execute(first_inputs[:1], optional_extra_outputs=["A"]),
+    RuntimeError, "Missing input 'input_2'",
+)
+assert_isolated_run(first_inputs, [(1, 30.0)], [("x", 3), ("y", 7)])
+
+# Lazy-plan collection errors remain RuntimeError with actionable column context.
+for invalid_frame, context in (
+    (polars.DataFrame({"id": [1], "wrong_column": [10]}), "value"),
+    (polars.DataFrame({"id": [1], "value": [[1, 2]]}), "cast"),
+):
+    invalid_inputs = [aquaflux.NamedFrame(invalid_frame, "input_1"), second_inputs[1]]
+    assert_graph_error(
+        lambda: isolated_graph.execute(invalid_inputs),
+        RuntimeError, "Failed to collect output plan", context,
+    )
+    # Section plans are built before unknown extra references are resolved;
+    # they are not collected when output resolution fails.
+    assert_graph_error(
+        lambda: isolated_graph.execute(invalid_inputs, optional_extra_outputs=["unknown_extra"]),
+        RuntimeError, "Unknown reference 'unknown_extra'",
+    )
+    assert_isolated_run(second_inputs, [(1, 40.0), (2, 90.0)], [("x", 200), ("y", 100)])
+assert first_run["C"].sort("id").rows() == [(1, 30.0)]
+assert first_run["B"].sort("label").rows() == [("x", 3), ("y", 7)]
+print("Independent-input run isolation assertions passed")
 
 
 # A complete example: clean and enrich once, then build two different reports.
@@ -453,7 +651,34 @@ example_graph = aquaflux.ExecutionGraph([
 example_frames = example_graph.execute([
     aquaflux.NamedFrame(example_orders, "orders"),
 ])
-example_results = dict(zip(example_graph.output_refs, example_frames))
+assert [result.name for result in example_frames] == example_graph.output_refs
+assert len(example_frames) == 2
+assert all(isinstance(result, aquaflux.ResultFrame) for result in example_frames)
+example_results = {result.name: result.data for result in example_frames}
+assert all(isinstance(data, polars.DataFrame) for data in example_results.values())
+assert example_results["customer_sales"].columns == [
+    "customer", "total_sales", "average_order", "items_sold",
+]
+assert example_results["customer_sales"].schema == {
+    "customer": polars.String, "total_sales": polars.Float64,
+    "average_order": polars.Float64, "items_sold": polars.Int64,
+}
+assert example_results["customer_sales"].rows() == [
+    ("Bob", 410.0, 205.0, 7),
+    ("Charlie", 120.0, 120.0, 1),
+    ("Alice", 120.0, 60.0, 7),
+    ("Unknown", 60.0, 60.0, 2),
+]
+assert example_results["high_value_orders"].columns == [
+    "order_id", "customer", "quantity", "order_total",
+]
+assert example_results["high_value_orders"].schema == {
+    "order_id": polars.Int64, "customer": polars.String,
+    "quantity": polars.Int64, "order_total": polars.Float64,
+}
+assert example_results["high_value_orders"].rows() == [
+    (5, "Bob", 5, 250.0), (2, "Bob", 2, 160.0),
+]
 
 print("\nCustomer sales leaderboard (all orders, grouped by customer):")
 print(example_results["customer_sales"])
@@ -566,7 +791,17 @@ multi_frames = multi_graph.execute([
     aquaflux.NamedFrame(multi_orders, "orders"),
 ])
 assert len(multi_frames) == 2
-multi_results = dict(zip(multi_graph.output_refs, multi_frames))
+assert [result.name for result in multi_frames] == multi_graph.output_refs
+assert all(isinstance(result, aquaflux.ResultFrame) for result in multi_frames)
+multi_results = {result.name: result.data for result in multi_frames}
+assert all(isinstance(data, polars.DataFrame) for data in multi_results.values())
+assert multi_results["regional_sales"].schema == {
+    "region": polars.String, "total_sales": polars.Float64, "items_sold": polars.Int64,
+}
+assert multi_results["large_orders"].schema == {
+    "order_id": polars.Int64, "customer": polars.String,
+    "region": polars.String, "order_total": polars.Float64,
+}
 assert multi_results["regional_sales"].columns == ["region", "total_sales", "items_sold"]
 assert multi_results["regional_sales"].rows() == [
     ("North", 40.0, 3),

@@ -32,6 +32,28 @@ jobs:
       - name: Run tests
         run: cargo test --all-features
 
+  python-pipeline:
+    name: Python pipeline assertions
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: aquaflux_core
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install maturin and test dependencies
+        run: python -m pip install 'maturin>=1.13,<2.0' pandas polars pyarrow
+      - name: Build and install aquaflux-core
+        run: |
+          python -m maturin build --out dist
+          python -m pip install --no-index --find-links dist --no-deps aquaflux-core
+      - name: Run Python pipeline assertions
+        run: python test_pipeline.py
+
   linux:
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
@@ -39,7 +61,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.x"
+          python-version: "3.12"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -48,6 +70,7 @@ jobs:
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
           working-directory: aquaflux_core
+
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:

@@ -36,21 +36,27 @@ impl PySection {
             .instructions
             .iter()
             .cloned()
-            .map(pipeline::Op::try_from)
+            .enumerate()
+            .map(|(index, op)| {
+                pipeline::Op::try_from(op)
+                    .map_err(|err| PyValueError::new_err(format!("operation {index}: {err}")))
+            })
             .collect::<PyResult<Vec<_>>>()?;
         let secondary_input_refs = self.secondary_input_refs.as_deref().unwrap_or(&[]);
         let mut missing_refs = Vec::new();
-        for op in &compiled {
+        for (index, op) in compiled.iter().enumerate() {
             let (flag, needs) = op.is_secondary_input_ref_needed();
             if flag {
                 let needs = needs.ok_or_else(|| {
-                    PyValueError::new_err("op requires a secondary input ref but none was provided")
+                    PyValueError::new_err(format!(
+                        "operation {index}: op requires a secondary input ref but none was provided"
+                    ))
                 })?;
                 for needed_ref in needs {
                     if !secondary_input_refs.contains(&needed_ref)
-                        && !missing_refs.contains(&needed_ref)
+                        && !missing_refs.iter().any(|(_, name)| name == &needed_ref)
                     {
-                        missing_refs.push(needed_ref);
+                        missing_refs.push((index, needed_ref));
                     }
                 }
             }
@@ -58,7 +64,11 @@ impl PySection {
         if !missing_refs.is_empty() {
             return Err(PyValueError::new_err(format!(
                 "secondary_input_refs does not contain needed refs: {}",
-                missing_refs.join(", ")
+                missing_refs
+                    .iter()
+                    .map(|(index, name)| format!("operation {index}: {name}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )));
         }
         Ok(CompiledSection {
